@@ -186,7 +186,14 @@ export async function testConnection(provider, { fetchImpl = fetch, timeoutMs = 
 export async function chatCompletion(
   provider,
   messages,
-  { fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS, temperature = 0.7, maxTokens = 400, now = Date.now } = {}
+  {
+    fetchImpl = fetch,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    temperature = 0.7,
+    maxTokens = 400,
+    responseFormat = null,
+    now = Date.now,
+  } = {}
 ) {
   const endpoint = classifyEndpoint(provider?.baseUrl || provider?.url);
   if (!endpoint.ok) throw new Error(endpoint.error);
@@ -211,6 +218,7 @@ export async function chatCompletion(
         temperature,
         max_tokens: maxTokens,
         stream: false,
+        ...(responseFormat ? { response_format: responseFormat } : {}),
       }),
       signal: controller.signal,
     });

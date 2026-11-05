@@ -28,6 +28,7 @@
           <button class="nav" data-tab="mascot">Mascot</button>
           <button class="nav" data-tab="music">Music</button>
           <button class="nav" data-tab="ai">AI Providers</button>
+          <button class="nav" data-tab="aimascot">AI Mascot</button>
           <button class="nav" data-tab="tiktok">TikFinity</button>
           <button class="nav" data-tab="logs">Event log</button>
         </nav>
@@ -270,6 +271,47 @@
               <span id="providerFormNote" class="note"></span>
             </div>
             <div id="providerTestResult" class="kv-block"></div>
+          </div>
+        </section>
+
+        <!-- AI MASCOT -->
+        <section class="tab-panel" data-panel="aimascot">
+          <h2>AI mascot co-host</h2>
+
+          <div class="card">
+            <h3>Live AI status</h3>
+            <div id="aiCohostStatus" class="kv-block"></div>
+            <p class="note">Every Zappy conversational line is generated live by the active AI provider — there are no canned chat replies.</p>
+          </div>
+
+          <div class="card">
+            <h3>Conversation settings</h3>
+            <form id="aiMascotForm" class="form-grid">
+              <label class="checkbox"><input type="checkbox" name="aiMascotEnabled" /> AI mascot enabled</label>
+              <label class="checkbox"><input type="checkbox" name="aiChatResponses" /> Chat responses</label>
+              <label class="checkbox"><input type="checkbox" name="aiGameCommentary" /> Game event commentary</label>
+              <label class="checkbox"><input type="checkbox" name="aiGiftReactions" /> Gift reactions</label>
+              <label class="checkbox"><input type="checkbox" name="aiRandomConversation" /> Random conversation</label>
+              <label class="checkbox"><input type="checkbox" name="voiceEnabled" /> Voice enabled</label>
+              <label>Conversation frequency
+                <select name="aiFrequency">
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+              <label>Response cooldown (seconds) <input type="number" name="aiCooldownSec" min="3" max="180" step="1" /></label>
+              <label>Max response length <input type="number" name="aiMaxChars" min="60" max="400" step="10" /></label>
+              <label>AI temperature <input type="number" name="aiTemperature" min="0" max="1.5" step="0.05" /></label>
+              <label>Voice volume (0-1) <input type="number" name="voiceVolume" min="0" max="1" step="0.05" /></label>
+            </form>
+            <div class="row buttons">
+              <button id="saveAiMascot">SAVE</button>
+              <button id="testAiMascot">TEST AI RESPONSE</button>
+              <span id="aiMascotNote" class="note"></span>
+            </div>
+            <div id="aiMascotTestResult" class="kv-block"></div>
+            <p class="note">Settings persist across restarts. Conversation memory is cleared by RESET GAME &amp; SESSION and is never stored permanently.</p>
           </div>
         </section>
 

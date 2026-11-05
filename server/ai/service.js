@@ -381,6 +381,7 @@ export class AIService {
         timeoutMs: Number(options.timeoutMs) || this.timeoutMs,
         temperature: options.temperature,
         maxTokens: options.maxTokens,
+        responseFormat: options.responseFormat || null,
         now: this.now,
       }
     );

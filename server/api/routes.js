@@ -17,7 +17,19 @@ function safeEqual(a, b) {
  * the admin token, which is read from the environment and never sent to the
  * public page.
  */
-export function createApiRouter({ engine, store, tikfinity, mock, hub, ingest, music, transport = null, ai = null, logger }) {
+export function createApiRouter({
+  engine,
+  store,
+  tikfinity,
+  mock,
+  hub,
+  ingest,
+  music,
+  transport = null,
+  ai = null,
+  cohost = null,
+  logger,
+}) {
   const router = express.Router();
   const authAttempts = new Map();
 
@@ -152,6 +164,7 @@ export function createApiRouter({ engine, store, tikfinity, mock, hub, ingest, m
       music: music ? { ...music.snapshot(), enabled: config.music.enabled } : null,
       musicTransport: transport ? transport.status() : null,
       ai: ai ? ai.overview() : null,
+      aiCohost: cohost ? cohost.status() : null,
       logs: store.listLogs(80),
       stats: {
         players: store.countPlayers(),
@@ -300,6 +313,26 @@ export function createApiRouter({ engine, store, tikfinity, mock, hub, ingest, m
     } catch (error) {
       logger?.error?.('AI draft test failed:', error.message);
       res.status(500).json({ ok: false, error: 'AI connection test failed unexpectedly.' });
+    }
+  });
+
+  router.get('/admin/ai', (req, res) => {
+    if (!cohost) return res.status(503).json({ ok: false, error: 'AI co-host is not configured.' });
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...cohost.status() });
+  });
+
+  // Real test request through the active provider. No canned or simulated line.
+  router.post('/admin/ai/test', async (req, res) => {
+    if (!cohost) return res.status(503).json({ ok: false, error: 'AI co-host is not configured.' });
+    try {
+      const result = await cohost.testResponse();
+      // A failed provider test is a result, not an HTTP error: the dashboard
+      // needs the provider/model/error fields to display them.
+      res.json(result);
+    } catch (error) {
+      logger?.error?.('AI co-host test failed:', error.message);
+      res.status(500).json({ ok: false, error: 'AI test request failed unexpectedly.' });
     }
   });
 

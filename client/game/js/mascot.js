@@ -134,6 +134,14 @@ const BODY = `
   </g>
 </svg>`;
 
+// AI replies can use intents that map to the closest existing expression; no
+// new animation assets are invented.
+const EMOTION_ALIASES = {
+  thinking: 'sleepy',
+  confused: 'surprised',
+  talking: 'happy',
+};
+
 export class Mascot {
   constructor({ layer, voice }) {
     this.layer = layer;
@@ -176,10 +184,11 @@ export class Mascot {
   }
 
   setEmotion(emotion) {
-    const face = FACES[emotion] || FACES.neutral;
+    const resolved = EMOTION_ALIASES[emotion] || emotion;
+    const face = FACES[resolved] || FACES.neutral;
     this.emotion = emotion;
     this.el.classList.remove(...Object.keys(FACES).map((key) => key));
-    if (emotion !== 'neutral') this.el.classList.add(emotion);
+    if (resolved !== 'neutral') this.el.classList.add(resolved);
     this.eyes.innerHTML = face.eyes;
     this.mouth.innerHTML = face.mouth;
     this.extra.innerHTML = face.extra || '';
@@ -193,7 +202,7 @@ export class Mascot {
     if (!this.enabled || !line.text) return;
     this.setEmotion(line.emotion || 'happy');
     this.showBubble(line.text, line.priority || 1);
-    if (this.voice) this.voice.speak(line.text, { priority: line.priority || 1 });
+    if (this.voice) this.voice.speak(line.text, { priority: line.priority || 1, force: Boolean(line.ai) });
   }
 
   showBubble(text, priority = 1) {

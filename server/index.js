@@ -15,6 +15,7 @@ import { MusicTransport } from './music/transport.js';
 import { createApiRouter } from './api/routes.js';
 import { buildGiftLegend } from './gift-handler/legend.js';
 import { AIService } from './ai/service.js';
+import { AICohost } from './ai/cohost.js';
 
 // ---------------------------------------------------------------- composition
 
@@ -53,6 +54,18 @@ try {
   logger.warn('AI: OpenRouter import skipped:', error.message);
 }
 
+// Initial setup: if no provider has been chosen yet, make the imported
+// OpenRouter provider active for Zappy. An existing admin selection always wins,
+// and a later provider failure is never auto-switched away from.
+if (!aiService.activeProvider()) {
+  const preferred =
+    aiService.list().find((provider) => provider.providerType === 'openrouter') || aiService.list()[0];
+  if (preferred) {
+    aiService.activate(preferred.id);
+    logger.info(`AI: activated ${preferred.name} as the initial provider.`);
+  }
+}
+
 const app = express();
 const server = http.createServer(app);
 const hub = new Hub({ server, logger });
@@ -67,6 +80,16 @@ const mock = new MockAdapter({
   logger,
   simulate: config.mock.simulate,
   intervalMs: config.mock.intervalMs,
+});
+
+// Zappy's AI co-host. It only observes chat/game events and broadcasts spoken
+// lines through the existing mascot channel; it never mutates the game.
+const aiCohost = new AICohost({
+  ai: aiService,
+  engine,
+  hub,
+  store,
+  logger,
 });
 
 // ------------------------------------------------------------- engine -> overlay
@@ -103,6 +126,8 @@ function ingest(event, origin = 'tikfinity') {
     switch (event.kind) {
       case 'chat':
         engine.handleChat(event);
+        // Never awaited: AI filtering/batching must not block TikFinity or moves.
+        aiCohost.observeChat(event);
         break;
       case 'gift':
         engine.handleGift(event);
@@ -151,6 +176,7 @@ function ingest(event, origin = 'tikfinity') {
         break;
       }
       case 'viewers':
+        aiCohost.setViewers(event.viewerCount);
         hub.broadcast('viewers', { count: event.viewerCount, ts: Date.now() });
         break;
       case 'streamEnd':
@@ -237,6 +263,7 @@ app.use(
     music,
     transport: musicTransport,
     ai: aiService,
+    cohost: aiCohost,
     logger,
   })
 );
@@ -302,6 +329,10 @@ logger.info(
   `AI providers: ${aiProviders.length} saved, active: ${activeAi ? activeAi.name : 'none'}` +
     `${aiService.encryptionWarning() ? ' (AI_SECRET not set)' : ''}`
 );
+logger.info(
+  `AI co-host: ${aiCohost.enabled() ? 'enabled' : 'disabled'}, ` +
+    `${activeAi ? `${activeAi.name} · ${activeAi.model}` : 'no active provider'}`
+);
 
 engine.start();
 
@@ -334,6 +365,7 @@ function shutdown(signal) {
   clearInterval(tickHandle);
   mock.stop();
   tikfinity.disconnect();
+  aiCohost.close();
   hub.close();
   store.log({ category: 'system', message: `Server stopped (${signal}).` });
   store.close();

@@ -1049,6 +1049,11 @@ export class GameEngine extends EventEmitter {
       autoPlayEnabled: this.settings.autoPlayEnabled,
       autoPlayIdleMs: this.settings.autoPlayIdleMs,
       stopGameEnabled: this.settings.stopGameEnabled,
+      aiMascotEnabled: this.settings.aiMascotEnabled !== false,
+      aiChatResponses: this.settings.aiChatResponses !== false,
+      aiGameCommentary: this.settings.aiGameCommentary !== false,
+      aiGiftReactions: this.settings.aiGiftReactions !== false,
+      aiRandomConversation: this.settings.aiRandomConversation === true,
     };
   }
 
@@ -1072,7 +1077,11 @@ export class GameEngine extends EventEmitter {
     if (patch.mascotSpeed !== undefined) next.mascotSpeed = numeric(patch.mascotSpeed, next.mascotSpeed, 0.25, 3);
     if (patch.voiceVolume !== undefined) next.voiceVolume = numeric(patch.voiceVolume, next.voiceVolume, 0, 1);
     if (patch.musicVolume !== undefined) next.musicVolume = numeric(patch.musicVolume, next.musicVolume, 0, 1);
+    if (patch.aiCooldownSec !== undefined) next.aiCooldownSec = numeric(patch.aiCooldownSec, next.aiCooldownSec, 3, 180);
+    if (patch.aiMaxChars !== undefined) next.aiMaxChars = numeric(patch.aiMaxChars, next.aiMaxChars, 60, 400);
+    if (patch.aiTemperature !== undefined) next.aiTemperature = numeric(patch.aiTemperature, next.aiTemperature, 0, 1.5);
     if (['low', 'normal', 'high'].includes(patch.speechFrequency)) next.speechFrequency = patch.speechFrequency;
+    if (['low', 'normal', 'high'].includes(patch.aiFrequency)) next.aiFrequency = patch.aiFrequency;
     for (const key of [
       'autoPlayEnabled',
       'mascotEnabled',
@@ -1080,6 +1089,11 @@ export class GameEngine extends EventEmitter {
       'musicEnabled',
       'musicShuffle',
       'stopGameEnabled',
+      'aiMascotEnabled',
+      'aiChatResponses',
+      'aiGameCommentary',
+      'aiGiftReactions',
+      'aiRandomConversation',
     ]) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }

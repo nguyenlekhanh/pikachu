@@ -79,10 +79,12 @@ export class Voice {
     return COOLDOWN[this.frequency] ?? COOLDOWN.normal;
   }
 
-  speak(text, { priority = 1 } = {}) {
+  speak(text, { priority = 1, force = false } = {}) {
     if (!this.supported || !this.enabled || !text) return false;
     const now = performance.now();
-    if (now - this.lastAt < this.cooldownFor(priority)) return false;
+    // AI co-host lines are already rate limited server-side; force lets a real
+    // generated reply reach TTS even right after a short game callout.
+    if (!force && now - this.lastAt < this.cooldownFor(priority)) return false;
     // Low frequency mode skips some of the chatter to sound natural.
     if (this.frequency === 'low' && priority < 2 && Math.random() < 0.5) return false;
 
