@@ -17,7 +17,7 @@ function safeEqual(a, b) {
  * the admin token, which is read from the environment and never sent to the
  * public page.
  */
-export function createApiRouter({ engine, store, tikfinity, mock, hub, ingest, music, transport = null, logger }) {
+export function createApiRouter({ engine, store, tikfinity, mock, hub, ingest, music, transport = null, ai = null, logger }) {
   const router = express.Router();
   const authAttempts = new Map();
 
@@ -151,6 +151,7 @@ export function createApiRouter({ engine, store, tikfinity, mock, hub, ingest, m
       gifts: store.listGifts(60),
       music: music ? { ...music.snapshot(), enabled: config.music.enabled } : null,
       musicTransport: transport ? transport.status() : null,
+      ai: ai ? ai.overview() : null,
       logs: store.listLogs(80),
       stats: {
         players: store.countPlayers(),
@@ -267,6 +268,82 @@ export function createApiRouter({ engine, store, tikfinity, mock, hub, ingest, m
       message: `Music playlist reloaded: ${playlist.tracks.length} playable track(s), ${playlist.skipped.length} skipped.`,
     });
     res.json({ ok: true, music: playlist });
+  });
+
+  // ---------------------------------------------------------------------- ai
+
+  const requireAi = (res) => {
+    if (ai) return true;
+    res.status(503).json({ ok: false, error: 'AI provider management is not configured.' });
+    return false;
+  };
+
+  router.get('/admin/providers', (req, res) => {
+    if (!requireAi(res)) return;
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...ai.overview() });
+  });
+
+  router.post('/admin/providers', (req, res) => {
+    if (!requireAi(res)) return;
+    const result = ai.create(req.body || {});
+    if (!result.ok) return res.status(400).json(result);
+    res.json(result);
+  });
+
+  // Draft test: validates and calls the model without saving anything.
+  router.post('/admin/providers/test', async (req, res) => {
+    if (!requireAi(res)) return;
+    try {
+      const result = await ai.testDraft(req.body || {});
+      res.json(result);
+    } catch (error) {
+      logger?.error?.('AI draft test failed:', error.message);
+      res.status(500).json({ ok: false, error: 'AI connection test failed unexpectedly.' });
+    }
+  });
+
+  router.post('/admin/providers/import-openrouter', (req, res) => {
+    if (!requireAi(res)) return;
+    const result = ai.importOpenRouter();
+    if (!result.ok) return res.status(409).json(result);
+    res.json(result);
+  });
+
+  router.patch('/admin/providers/:id', (req, res) => {
+    if (!requireAi(res)) return;
+    const result = ai.update(req.params.id, req.body || {});
+    if (!result.ok) return res.status(result.code === 'not-found' ? 404 : 400).json(result);
+    res.json(result);
+  });
+
+  router.post('/admin/providers/:id/test', async (req, res) => {
+    if (!requireAi(res)) return;
+    try {
+      const result = await ai.test(req.params.id);
+      if (result.code === 'not-found') return res.status(404).json(result);
+      res.json(result);
+    } catch (error) {
+      logger?.error?.('AI connection test failed:', error.message);
+      res.status(500).json({ ok: false, error: 'AI connection test failed unexpectedly.' });
+    }
+  });
+
+  router.post('/admin/providers/:id/activate', (req, res) => {
+    if (!requireAi(res)) return;
+    const result = ai.activate(req.params.id);
+    if (!result.ok) return res.status(404).json(result);
+    res.json(result);
+  });
+
+  router.delete('/admin/providers/:id', (req, res) => {
+    if (!requireAi(res)) return;
+    const result = ai.remove(req.params.id, { disableConfirmed: Boolean((req.body || {}).confirmDisable) });
+    if (!result.ok) {
+      const status = result.code === 'not-found' ? 404 : result.code === 'active-provider' ? 409 : 400;
+      return res.status(status).json(result);
+    }
+    res.json(result);
   });
 
   router.post('/admin/tiktok', (req, res) => {

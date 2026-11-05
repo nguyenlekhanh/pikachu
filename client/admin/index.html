@@ -27,6 +27,7 @@
           <button class="nav" data-tab="gifts">Gift settings</button>
           <button class="nav" data-tab="mascot">Mascot</button>
           <button class="nav" data-tab="music">Music</button>
+          <button class="nav" data-tab="ai">AI Providers</button>
           <button class="nav" data-tab="tiktok">TikFinity</button>
           <button class="nav" data-tab="logs">Event log</button>
         </nav>
@@ -234,6 +235,41 @@
             </div>
             <p id="musicWarnings" class="note"></p>
             <p class="note">Only play music you are licensed to broadcast. See docs/MUSIC.md and assets/music/LICENSES.md.</p>
+          </div>
+        </section>
+
+        <!-- AI PROVIDERS -->
+        <section class="tab-panel" data-panel="ai">
+          <h2>AI providers</h2>
+          <div class="card">
+            <div class="row buttons">
+              <button id="addProvider">+ ADD PROVIDER</button>
+              <button id="importOpenRouter" class="warn">Import OpenRouter from .env</button>
+              <span id="aiNote" class="note"></span>
+            </div>
+            <p id="aiEnvWarning" class="note"></p>
+            <div id="aiProviderList" class="provider-list"></div>
+          </div>
+
+          <div class="card hidden" id="providerFormCard">
+            <h3 id="providerFormTitle">Add provider</h3>
+            <form id="providerForm" class="form-grid" autocomplete="off">
+              <label>Provider name <input name="name" placeholder="Ollama" required /></label>
+              <label>AI URL <input name="url" placeholder="http://10.0.0.142:11434/v1" required /></label>
+              <label>
+                AI KEY
+                <input name="apiKey" type="password" autocomplete="new-password" placeholder="Optional for local Ollama" />
+              </label>
+              <label>AI model <input name="model" placeholder="llama3.1" required /></label>
+            </form>
+            <p class="note">The URL may be a base URL (<code>https://provider.example/v1</code>) or a full chat endpoint (<code>…/v1/chat/completions</code>). Saved keys are never sent back to this page.</p>
+            <div class="row buttons">
+              <button id="testProvider">TEST CONNECTION</button>
+              <button id="saveProvider">SAVE</button>
+              <button id="cancelProvider">CANCEL</button>
+              <span id="providerFormNote" class="note"></span>
+            </div>
+            <div id="providerTestResult" class="kv-block"></div>
           </div>
         </section>
 

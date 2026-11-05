@@ -41,6 +41,7 @@ export class MemoryStore {
     this.configValue = null;
     this.logs = [];
     this.giftLibrary = new Map();
+    this.providers = [];
     this.logSeq = 0;
   }
 
@@ -184,6 +185,54 @@ export class MemoryStore {
     return [...this.giftLibrary.values()].sort((a, b) => b.count - a.count).slice(0, limit);
   }
 
+  // ------------------------------------------------------------- ai providers
+
+  listProviders() {
+    return this.providers.map((row) => ({ ...row }));
+  }
+
+  getProvider(id) {
+    const row = this.providers.find((entry) => entry.id === String(id));
+    return row ? { ...row } : null;
+  }
+
+  createProvider(data) {
+    const row = { ...data, id: String(data.id), isActive: false };
+    this.providers.push(row);
+    return { ...row };
+  }
+
+  updateProvider(id, patch = {}) {
+    const row = this.providers.find((entry) => entry.id === String(id));
+    if (!row) return null;
+    Object.assign(row, patch, { id: row.id, updatedAt: patch.updatedAt || nowTs() });
+    return { ...row };
+  }
+
+  deleteProvider(id) {
+    const before = this.providers.length;
+    this.providers = this.providers.filter((entry) => entry.id !== String(id));
+    return this.providers.length < before;
+  }
+
+  setActiveProvider(id) {
+    for (const row of this.providers) {
+      row.isActive = Boolean(id) && row.id === String(id);
+      if (row.isActive) row.updatedAt = nowTs();
+    }
+    return id ? this.getProvider(id) : null;
+  }
+
+  noteProviderTest(id, { status = null, testedAt = nowTs(), error = null } = {}) {
+    const row = this.providers.find((entry) => entry.id === String(id));
+    if (!row) return null;
+    row.lastTestStatus = status;
+    row.lastTestedAt = testedAt;
+    row.lastError = error;
+    row.updatedAt = nowTs();
+    return { ...row };
+  }
+
   close() {}
 }
 
@@ -206,6 +255,7 @@ export class JsonStore extends MemoryStore {
         this.logs = data.logs || [];
         this.logSeq = data.logSeq || this.logs.length;
         for (const gift of data.gifts || []) this.giftLibrary.set(String(gift.giftId), gift);
+        this.providers = Array.isArray(data.providers) ? data.providers : [];
       } catch (error) {
         console.error('JSON store could not be read, starting fresh:', error.message);
       }
@@ -228,6 +278,7 @@ export class JsonStore extends MemoryStore {
       logs: this.logs.slice(-500),
       logSeq: this.logSeq,
       gifts: [...this.giftLibrary.values()],
+      providers: this.providers,
     };
     try {
       fs.writeFileSync(this.file, JSON.stringify(payload));
@@ -250,6 +301,11 @@ export class JsonStore extends MemoryStore {
   }
   recordGift(...args) { const r = super.recordGift(...args); this._touch(); return r; }
   log(...args) { const r = super.log(...args); this._touch(); return r; }
+  createProvider(...args) { const r = super.createProvider(...args); this._touch(); return r; }
+  updateProvider(...args) { const r = super.updateProvider(...args); this._touch(); return r; }
+  deleteProvider(...args) { const r = super.deleteProvider(...args); this._touch(); return r; }
+  setActiveProvider(...args) { const r = super.setActiveProvider(...args); this._touch(); return r; }
+  noteProviderTest(...args) { const r = super.noteProviderTest(...args); this._touch(); return r; }
 
   close() {
     if (this._timer) clearTimeout(this._timer);

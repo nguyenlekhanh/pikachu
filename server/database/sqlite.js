@@ -53,7 +53,44 @@ const MIGRATIONS = [
     last_seen INTEGER
   );
   `,
+  `
+  CREATE TABLE IF NOT EXISTS ai_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model TEXT NOT NULL,
+    encrypted_api_key TEXT,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    last_test_status TEXT,
+    last_tested_at INTEGER,
+    last_error TEXT,
+    source TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_providers_active ON ai_providers(is_active) WHERE is_active = 1;
+  `,
 ];
+
+function toProvider(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    providerType: row.provider_type,
+    baseUrl: row.base_url,
+    model: row.model,
+    encryptedApiKey: row.encrypted_api_key,
+    isActive: Boolean(row.is_active),
+    lastTestStatus: row.last_test_status,
+    lastTestedAt: row.last_tested_at,
+    lastError: row.last_error,
+    source: row.source,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
 function toPlayer(row) {
   if (!row) return null;
@@ -160,6 +197,26 @@ export class SqliteStore {
           last_seen = excluded.last_seen
       `),
       listGifts: this.db.prepare('SELECT * FROM gifts ORDER BY count DESC LIMIT ?'),
+      listProviders: this.db.prepare('SELECT * FROM ai_providers ORDER BY created_at ASC'),
+      getProvider: this.db.prepare('SELECT * FROM ai_providers WHERE id = ?'),
+      insertProvider: this.db.prepare(`
+        INSERT INTO ai_providers
+          (id, name, provider_type, base_url, model, encrypted_api_key, is_active,
+           last_test_status, last_tested_at, last_error, source, created_at, updated_at)
+        VALUES
+          (@id, @name, @providerType, @baseUrl, @model, @encryptedApiKey, 0,
+           NULL, NULL, NULL, @source, @createdAt, @updatedAt)
+      `),
+      updateProvider: this.db.prepare(`
+        UPDATE ai_providers SET name = ?, provider_type = ?, base_url = ?, model = ?,
+          encrypted_api_key = ?, updated_at = ? WHERE id = ?
+      `),
+      deleteProvider: this.db.prepare('DELETE FROM ai_providers WHERE id = ?'),
+      clearActiveProviders: this.db.prepare('UPDATE ai_providers SET is_active = 0'),
+      activateProvider: this.db.prepare('UPDATE ai_providers SET is_active = 1, updated_at = ? WHERE id = ?'),
+      noteProviderTest: this.db.prepare(`
+        UPDATE ai_providers SET last_test_status = ?, last_tested_at = ?, last_error = ?, updated_at = ? WHERE id = ?
+      `),
     };
   }
 
@@ -306,6 +363,64 @@ export class SqliteStore {
       count: row.count,
       lastSeen: row.last_seen,
     }));
+  }
+
+  // ------------------------------------------------------------- ai providers
+
+  listProviders() {
+    return this.stmts.listProviders.all().map(toProvider);
+  }
+
+  getProvider(id) {
+    return toProvider(this.stmts.getProvider.get(String(id)));
+  }
+
+  createProvider(data) {
+    this.stmts.insertProvider.run({
+      id: String(data.id),
+      name: data.name,
+      providerType: data.providerType,
+      baseUrl: data.baseUrl,
+      model: data.model,
+      encryptedApiKey: data.encryptedApiKey || null,
+      source: data.source || 'manual',
+      createdAt: data.createdAt || Date.now(),
+      updatedAt: data.updatedAt || Date.now(),
+    });
+    return this.getProvider(data.id);
+  }
+
+  updateProvider(id, patch = {}) {
+    this.stmts.updateProvider.run(
+      patch.name,
+      patch.providerType,
+      patch.baseUrl,
+      patch.model,
+      patch.encryptedApiKey ?? null,
+      patch.updatedAt || Date.now(),
+      String(id)
+    );
+    return this.getProvider(id);
+  }
+
+  deleteProvider(id) {
+    const info = this.stmts.deleteProvider.run(String(id));
+    return info.changes > 0;
+  }
+
+  /** Exactly one active provider, enforced by a unique partial index too. */
+  setActiveProvider(id) {
+    const run = this.db.transaction(() => {
+      this.stmts.clearActiveProviders.run();
+      if (id) this.stmts.activateProvider.run(Date.now(), String(id));
+    });
+    run();
+    return id ? this.getProvider(id) : null;
+  }
+
+  noteProviderTest(id, { status = null, testedAt = Date.now(), error = null } = {}) {
+    this.stmts.noteProviderTest.run(status, testedAt, error, Date.now(), String(id));
+    return this.getProvider(id);
   }
 
   close() {

@@ -14,6 +14,7 @@ import { MusicLibrary } from './music/playlist.js';
 import { MusicTransport } from './music/transport.js';
 import { createApiRouter } from './api/routes.js';
 import { buildGiftLegend } from './gift-handler/legend.js';
+import { AIService } from './ai/service.js';
 
 // ---------------------------------------------------------------- composition
 
@@ -33,6 +34,24 @@ const musicTransport = new MusicTransport({
   logger,
   getShuffle: () => Boolean(engine.settings.musicShuffle),
 });
+
+// AI provider registry. Keys are encrypted with AI_SECRET/APP_SECRET; the
+// ADMIN_TOKEN fallback is reported in the admin UI, never in logs.
+const aiService = new AIService({
+  store,
+  aiConfig: config.ai,
+  encryptionSecret: config.ai.encryptionSecret || config.adminToken,
+  encryptionSource: config.ai.encryptionSecret ? config.ai.encryptionSource : 'ADMIN_TOKEN-derived',
+  logger,
+});
+
+try {
+  if (config.ai.openrouter.warning) logger.warn(`AI: ${config.ai.openrouter.warning}`);
+  const imported = aiService.importOpenRouter();
+  if (imported.ok && imported.created) logger.info('AI: OpenRouter imported from .env (inactive).');
+} catch (error) {
+  logger.warn('AI: OpenRouter import skipped:', error.message);
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -206,7 +225,21 @@ app.disable('x-powered-by');
 app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '256kb' }));
 
-app.use('/api', createApiRouter({ engine, store, tikfinity, mock, hub, ingest, music, transport: musicTransport, logger }));
+app.use(
+  '/api',
+  createApiRouter({
+    engine,
+    store,
+    tikfinity,
+    mock,
+    hub,
+    ingest,
+    music,
+    transport: musicTransport,
+    ai: aiService,
+    logger,
+  })
+);
 
 const clientDir = path.join(config.root, 'client');
 
@@ -261,6 +294,13 @@ const playlist = music.snapshot();
 logger.info(
   `Music: ${playlist.tracks.length} track(s) in ${path.relative(config.root, config.music.dir) || config.music.dir}` +
     `${config.music.enabled ? '' : ' (MUSIC_ENABLED=false)'}`
+);
+
+const aiProviders = aiService.list();
+const activeAi = aiProviders.find((provider) => provider.isActive);
+logger.info(
+  `AI providers: ${aiProviders.length} saved, active: ${activeAi ? activeAi.name : 'none'}` +
+    `${aiService.encryptionWarning() ? ' (AI_SECRET not set)' : ''}`
 );
 
 engine.start();

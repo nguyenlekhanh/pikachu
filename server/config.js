@@ -15,6 +15,14 @@ const num = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+// OpenRouter values are sometimes pasted into the wrong variable. Detect that
+// shape and use the correct values in memory; the .env file is never rewritten.
+const openrouterUrl = String(process.env.OPENROUTER_URL || '').trim();
+const openrouterKey = String(process.env.OPENROUTER_API_KEY || '').trim();
+const openrouterModel = String(process.env.OPENROUTER_MODEL || '').trim();
+const openrouterLooksSwapped =
+  /^https?:\/\//i.test(openrouterKey) && !/^https?:\/\//i.test(openrouterUrl) && Boolean(openrouterUrl);
+
 export const config = {
   root: ROOT,
   // A PORT of 0/empty is treated as "not configured": this game is a local
@@ -45,6 +53,23 @@ export const config = {
     dir: path.resolve(ROOT, process.env.MUSIC_DIR || 'assets/music'),
   },
   giftIconDir: path.join(ROOT, 'assets', 'gift_icon'),
+  ai: {
+    // AI_SECRET is the preferred at-rest key for provider API keys. APP_SECRET is
+    // accepted as a fallback; if neither exists the service derives one from
+    // ADMIN_TOKEN and shows a warning in the admin dashboard.
+    encryptionSecret: process.env.AI_SECRET || process.env.APP_SECRET || '',
+    encryptionSource: process.env.AI_SECRET ? 'AI_SECRET' : process.env.APP_SECRET ? 'APP_SECRET' : 'ADMIN_TOKEN-derived',
+    timeoutMs: Math.min(30000, Math.max(1000, num(process.env.AI_TIMEOUT_MS, 8000))),
+    openrouter: {
+      url: openrouterLooksSwapped ? openrouterKey : openrouterUrl,
+      key: openrouterLooksSwapped ? openrouterUrl : openrouterKey,
+      model: openrouterModel,
+      swapped: openrouterLooksSwapped,
+      warning: openrouterLooksSwapped
+        ? 'OPENROUTER_URL and OPENROUTER_API_KEY appear to be swapped in .env. The values were used correctly in memory; fix the variable names so the next restart is unambiguous.'
+        : null,
+    },
+  },
   allowMousePlay: bool(process.env.ALLOW_MOUSE_PLAY, true),
   ttsProvider: process.env.TTS_PROVIDER || 'browser',
   logLevel: process.env.LOG_LEVEL || 'info',

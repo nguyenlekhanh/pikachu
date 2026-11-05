@@ -157,6 +157,10 @@ sessionStorage only; the overlay never receives it).
   solvable Level 1 board — with a two-step confirmation. Settings, gift mappings, music, TikFinity
   configuration, database schema and every asset are preserved, and the reset is one database
   transaction (rollback keeps the previous session if it fails).
+- **AI Providers:** save multiple OpenAI-compatible providers (OpenRouter, Ollama, custom), test
+  each one with a real chat request, keep exactly one active, and import OpenRouter from `.env`.
+  Keys are encrypted at rest and never returned to the browser. See
+  **[docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md)**.
 - **Game control:** start, pause, resume, restart, auto play on/off, reset leaderboard, stop game.
 - **Game settings:** board size mode/fixed size, difficulty, tile types, cooldown, auto-play idle
   and move intervals, animation speed.
@@ -213,6 +217,7 @@ server/gift-handler/   gift tier/id resolution + dedupe
 server/music/          playlist.json loading + validation
 server/websocket/      client hub (state, fx, mascot, feed, notices)
 server/database/       SQLite store (migrations) + JSON/memory fallbacks
+server/ai/             provider registry, endpoint detection, adapter, encrypted keys
 server/api/            public + admin REST API with token auth
 shared/                tile catalogue used by both sides
 assets/music/          your tracks + playlist.json + LICENSES.md (not app code)
@@ -228,7 +233,7 @@ Details: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 ## 11. Tests and demo
 
 ```bash
-npm test        # 120 automated tests (matching, board, coordinates, engine, gifts, music queue/transport, session reset, TikFinity parsing)
+npm test        # 143 automated tests (matching, board, coordinates, engine, gifts, music queue/transport, session reset, AI providers, TikFinity parsing)
 npm run smoke   # 16 end-to-end checks against the running server (HTTP, auth, WS, move, score, gift, music)
 npm run demo    # pushes a realistic comment + gift sequence into the running server
 ```
@@ -256,13 +261,18 @@ Admin (require `x-admin-token`):
 `POST /api/admin/settings`, `POST /api/admin/music`, `POST /api/admin/tiktok`,
 `POST /api/admin/test`, `GET /api/admin/logs`.
 
+AI providers: `GET/POST /api/admin/providers`, `PATCH/DELETE /api/admin/providers/:id`,
+`POST /api/admin/providers/test`, `POST /api/admin/providers/:id/test`,
+`POST /api/admin/providers/:id/activate`, `POST /api/admin/providers/import-openrouter`
+(secrets are never returned; see **[docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md)**).
+
 ---
 
 ## 13. V1 scope
 
 Included: game, shared multiplayer board, scoring/leaderboard (top players, top gifters, most
 active), gifts, mascot + voice, background music, auto play, TikFinity integration, admin dashboard,
-OBS support, tests, docs.
+AI provider management with real connection tests, OBS support, tests, docs.
 
 Explicitly **not** included: boss battles, boss events/missions, and any V2 feature.
 

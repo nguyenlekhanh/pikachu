@@ -126,6 +126,7 @@ function render() {
   if (!state.dirty.music) fillForm('#musicForm', data.settings);
   if (!state.dirty.gifts) renderGifts();
   renderMusic(data);
+  renderProviders(data);
   renderTikTok(data);
   renderLogs();
 }
@@ -542,6 +543,264 @@ $('#nextMusic').addEventListener('click', async () => {
     setTimeout(() => {
       if (note.textContent && note.className.includes('ok')) note.textContent = '';
     }, 5000);
+  }
+});
+
+// ---------------------------------------------------------------------- ai
+
+const providerState = { editing: null };
+
+function providerStatus(provider) {
+  if (provider.lastTestStatus === 'connected') return { label: 'CONNECTED', cls: 'ok' };
+  if (provider.lastTestStatus === 'failed') return { label: 'CONNECTION FAILED', cls: 'bad' };
+  return { label: 'NEVER TESTED', cls: 'warn' };
+}
+
+function renderProviders(data) {
+  const ai = data.ai;
+  if (!ai) return;
+
+  const warnings = [];
+  if (ai.openrouter?.swapped) {
+    warnings.push(
+      'OPENROUTER_URL and OPENROUTER_API_KEY appear to be swapped in .env. The values were used correctly in memory; fix the variable names.'
+    );
+  }
+  if (ai.openrouter && !ai.openrouter.configured) {
+    warnings.push('OpenRouter is not configured. Set OPENROUTER_URL, OPENROUTER_API_KEY and OPENROUTER_MODEL in .env to import it.');
+  }
+  if (ai.encryptionWarning) warnings.push(ai.encryptionWarning);
+  $('#aiEnvWarning').textContent = warnings.join(' ');
+  $('#aiEnvWarning').className = warnings.length ? 'note bad' : 'note';
+
+  const importButton = $('#importOpenRouter');
+  if (importButton) importButton.disabled = !ai.openrouter?.configured;
+
+  const list = $('#aiProviderList');
+  if (!ai.providers.length) {
+    list.innerHTML = '<div class="empty">No AI providers yet. Add one, or import OpenRouter from .env.</div>';
+    return;
+  }
+
+  list.innerHTML = ai.providers
+    .map((provider) => {
+      const status = providerStatus(provider);
+      const tested = provider.lastTestedAt ? new Date(provider.lastTestedAt).toLocaleString() : 'never';
+      return `
+      <article class="provider-card${provider.isActive ? ' active' : ''}">
+        <div class="provider-head">
+          <h4>${escapeHtml(provider.name)}</h4>
+          <span class="badge ${provider.isActive ? 'ok' : ''}">${provider.isActive ? 'ACTIVE' : 'INACTIVE'}</span>
+          <span class="badge ${status.cls}">${status.label}</span>
+          <span class="tag">${escapeHtml(String(provider.providerType || 'openai').toUpperCase())}</span>
+        </div>
+        <div class="provider-meta">
+          <div><span>URL</span><code>${escapeHtml(provider.baseUrl)}</code></div>
+          <div><span>MODEL</span><b>${escapeHtml(provider.model)}</b></div>
+          <div><span>KEY</span><b>${provider.hasKey ? escapeHtml(provider.maskedKey) : 'no key (optional)'}</b></div>
+          <div><span>LAST TEST</span><b>${escapeHtml(tested)}</b></div>
+        </div>
+        ${provider.lastError ? `<p class="provider-error">${escapeHtml(provider.lastError)}</p>` : ''}
+        <div class="row buttons">
+          <button data-provider-action="test" data-id="${escapeHtml(provider.id)}">TEST CONNECTION</button>
+          <button data-provider-action="edit" data-id="${escapeHtml(provider.id)}">EDIT</button>
+          <button data-provider-action="activate" data-id="${escapeHtml(provider.id)}" ${provider.isActive ? 'disabled' : ''}>SET ACTIVE</button>
+          <button data-provider-action="delete" class="danger" data-id="${escapeHtml(provider.id)}">DELETE</button>
+        </div>
+      </article>`;
+    })
+    .join('');
+}
+
+function openProviderForm(provider = null) {
+  providerState.editing = provider ? provider.id : null;
+  $('#providerFormTitle').textContent = provider ? `Edit ${provider.name}` : 'Add provider';
+  const form = $('#providerForm');
+  form.elements.name.value = provider?.name || '';
+  form.elements.url.value = provider?.baseUrl || '';
+  form.elements.model.value = provider?.model || '';
+  form.elements.apiKey.value = '';
+  form.elements.apiKey.placeholder = provider?.hasKey
+    ? 'Leave blank to keep the saved key'
+    : 'Optional for local Ollama';
+  $('#providerFormNote').textContent = '';
+  $('#providerTestResult').innerHTML = '';
+  $('#providerFormCard').classList.remove('hidden');
+  form.elements.name.focus();
+  $('#providerFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeProviderForm() {
+  providerState.editing = null;
+  $('#providerForm').reset();
+  $('#providerFormCard').classList.add('hidden');
+  $('#providerTestResult').innerHTML = '';
+  $('#providerFormNote').textContent = '';
+}
+
+function providerFormPayload() {
+  const form = $('#providerForm');
+  return {
+    name: form.elements.name.value.trim(),
+    url: form.elements.url.value.trim(),
+    model: form.elements.model.value.trim(),
+    apiKey: form.elements.apiKey.value.trim(),
+  };
+}
+
+function renderProviderTest(result) {
+  const cells = [
+    ['Result', result.ok ? 'CONNECTED' : 'CONNECTION FAILED'],
+    ['HTTP status', result.status == null ? '—' : String(result.status)],
+    ['Response time', `${result.ms ?? 0} ms`],
+    ['Model', result.model || '—'],
+    ['Endpoint', result.endpoint || '—'],
+  ];
+  if (result.error) cells.push(['Error', result.error]);
+  $('#providerTestResult').innerHTML = cells
+    .map(
+      ([label, value]) =>
+        `<div class="cell ${label === 'Result' ? (result.ok ? 'ok' : 'bad') : ''}"><span>${escapeHtml(
+          label
+        )}</span><b>${escapeHtml(value)}</b></div>`
+    )
+    .join('');
+}
+
+$('#addProvider').addEventListener('click', () => openProviderForm());
+$('#cancelProvider').addEventListener('click', closeProviderForm);
+
+$('#saveProvider').addEventListener('click', async () => {
+  const note = $('#providerFormNote');
+  const payload = providerFormPayload();
+  if (!payload.name || !payload.url || !payload.model) {
+    note.textContent = 'Provider name, AI URL and AI model are required.';
+    note.className = 'note bad';
+    return;
+  }
+  try {
+    if (providerState.editing) {
+      await api(`/api/admin/providers/${providerState.editing}`, { method: 'PATCH', body: payload });
+    } else {
+      await api('/api/admin/providers', { method: 'POST', body: payload });
+    }
+    $('#aiNote').textContent = 'Provider saved.';
+    $('#aiNote').className = 'note ok';
+    closeProviderForm();
+    await refresh();
+  } catch (error) {
+    note.textContent = error.message;
+    note.className = 'note bad';
+  }
+});
+
+$('#testProvider').addEventListener('click', async () => {
+  const button = $('#testProvider');
+  const note = $('#providerFormNote');
+  const payload = providerFormPayload();
+  if (!payload.name || !payload.url || !payload.model) {
+    note.textContent = 'Fill in name, URL and model before testing.';
+    note.className = 'note bad';
+    return;
+  }
+  button.disabled = true;
+  note.textContent = 'Testing…';
+  note.className = 'note';
+  try {
+    const result = await api('/api/admin/providers/test', {
+      method: 'POST',
+      body: { ...payload, id: providerState.editing || undefined },
+    });
+    renderProviderTest(result);
+    note.textContent = result.ok ? 'Model answered correctly.' : 'The model could not be reached or did not answer.';
+    note.className = result.ok ? 'note ok' : 'note bad';
+  } catch (error) {
+    note.textContent = error.message;
+    note.className = 'note bad';
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#importOpenRouter').addEventListener('click', async () => {
+  const note = $('#aiNote');
+  try {
+    const result = await api('/api/admin/providers/import-openrouter', { method: 'POST' });
+    note.textContent = result.created ? 'OpenRouter imported as an inactive provider.' : 'OpenRouter is already in the provider list.';
+    note.className = 'note ok';
+    await refresh();
+  } catch (error) {
+    note.textContent = error.message;
+    note.className = 'note bad';
+  }
+});
+
+$('#aiProviderList').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-provider-action]');
+  if (!button) return;
+  const providers = state.overview?.ai?.providers || [];
+  const provider = providers.find((entry) => entry.id === button.dataset.id);
+  if (!provider) return;
+  const action = button.dataset.providerAction;
+  const note = $('#aiNote');
+
+  if (action === 'edit') {
+    openProviderForm(provider);
+    return;
+  }
+
+  if (action === 'activate') {
+    try {
+      await api(`/api/admin/providers/${provider.id}/activate`, { method: 'POST' });
+      note.textContent = `${provider.name} is now the active AI provider.`;
+      note.className = 'note ok';
+      await refresh();
+    } catch (error) {
+      note.textContent = error.message;
+      note.className = 'note bad';
+    }
+    return;
+  }
+
+  if (action === 'test') {
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'TESTING…';
+    try {
+      const result = await api(`/api/admin/providers/${provider.id}/test`, { method: 'POST' });
+      note.textContent = result.ok
+        ? `${provider.name}: CONNECTED · HTTP ${result.status} · ${result.ms} ms · ${result.model}`
+        : `${provider.name}: CONNECTION FAILED — ${result.error || 'unknown error'}`;
+      note.className = result.ok ? 'note ok' : 'note bad';
+      await refresh();
+    } catch (error) {
+      note.textContent = error.message;
+      note.className = 'note bad';
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
+    return;
+  }
+
+  if (action === 'delete') {
+    if (!window.confirm(`Delete the provider "${provider.name}"? This cannot be undone.`)) return;
+    let confirmDisable = false;
+    if (provider.isActive) {
+      confirmDisable = window.confirm(
+        'This provider is ACTIVE. Deleting it disables AI features until you activate another provider. Continue?'
+      );
+      if (!confirmDisable) return;
+    }
+    try {
+      await api(`/api/admin/providers/${provider.id}`, { method: 'DELETE', body: { confirmDisable } });
+      note.textContent = `${provider.name} deleted.`;
+      note.className = 'note ok';
+      await refresh();
+    } catch (error) {
+      note.textContent = error.message;
+      note.className = 'note bad';
+    }
   }
 });
 

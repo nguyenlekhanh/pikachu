@@ -210,6 +210,45 @@ h3 {
 .inline-form { gap: 8px; }
 .inline-form input { flex: 1 1 130px; }
 
+/* ----------------------------------------------------------- ai providers */
+
+.provider-list { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.provider-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.provider-card.active { border-color: rgba(90, 240, 160, 0.5); background: rgba(90, 240, 160, 0.06); }
+.provider-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.provider-head h4 { margin: 0; font-size: 17px; color: #fff; }
+.badge {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.badge.ok { color: var(--green); border-color: rgba(90, 240, 160, 0.5); }
+.badge.bad { color: var(--red); border-color: rgba(255, 107, 107, 0.5); }
+.badge.warn { color: var(--orange); border-color: rgba(255, 179, 71, 0.45); }
+.provider-head .tag {
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid rgba(92, 225, 255, 0.35);
+  border-radius: 999px;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--cyan);
+}
+.provider-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 12px; }
+.provider-meta div { display: flex; flex-direction: column; gap: 3px; }
+.provider-meta span { font-size: 10.5px; letter-spacing: 0.12em; color: var(--muted); }
+.provider-meta code, .provider-meta b { font-size: 13px; color: #e7eefc; word-break: break-all; }
+.provider-error { margin: 12px 0 0; padding: 10px 12px; border-radius: 10px; background: rgba(255, 107, 107, 0.1); color: var(--red); font-size: 12.5px; line-height: 1.5; }
+.provider-card .row.buttons { margin-top: 14px; }
+
 /* ----------------------------------------------------------- live session */
 
 .session-card { border-color: rgba(255, 107, 107, 0.45); }
