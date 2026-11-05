@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------------------
+# PIKACHU LIVE US V1 - files that must never be committed
+# ---------------------------------------------------------------------------
+
+# Dependencies
+node_modules/
+
+# Environment files: the real .env holds the admin token and local settings.
+# Keep the template (safe placeholders only) in version control.
+.env
+.env.*
+!.env.example
+
+# SQLite database and its runtime side files
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+
+# Logs and crash dumps
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Cache folders
+.cache/
+.parcel-cache/
+.eslintcache/
+.vite/
+.next/
+coverage/
+.nyc_output/
+
+# Build artifacts
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Temporary test files and local scratch output
+tmp/
+temp/
+*.tmp
+*.temp
+test-results/
+*_test_output/
+playwright-report/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editor / tooling folders
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Agent / workspace metadata
+.freebuff/

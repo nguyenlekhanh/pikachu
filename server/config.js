@@ -1,0 +1,81 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+export const ROOT = path.resolve(here, '..');
+
+const bool = (value, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+};
+
+const num = (value, fallback) => {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+export const config = {
+  root: ROOT,
+  // A PORT of 0/empty is treated as "not configured": this game is a local
+  // overlay, so an ephemeral OS-assigned port would break OBS bookmarks.
+  port: (() => {
+    const configured = num(process.env.PORT, 0);
+    return configured > 0 ? configured : 3000;
+  })(),
+  host: process.env.HOST || '0.0.0.0',
+  adminToken: process.env.ADMIN_TOKEN || 'change-me-now',
+  adminTokenIsDefault: !process.env.ADMIN_TOKEN || process.env.ADMIN_TOKEN === 'change-me-now',
+  dataDir: path.join(ROOT, 'data'),
+  dbFile: process.env.DB_FILE
+    ? path.resolve(ROOT, process.env.DB_FILE)
+    : path.join(ROOT, 'data', 'pikachu.db'),
+  tikfinity: {
+    enabled: bool(process.env.TIKFINITY_ENABLED, true),
+    url: process.env.TIKFINITY_WS_URL || 'ws://127.0.0.1:21213/',
+    reconnect: bool(process.env.TIKFINITY_RECONNECT, true),
+  },
+  mock: {
+    enabled: bool(process.env.MOCK_MODE, true),
+    simulate: bool(process.env.MOCK_SIMULATE, false),
+    intervalMs: Math.max(3000, num(process.env.MOCK_INTERVAL_MS, 9000)),
+  },
+  music: {
+    enabled: bool(process.env.MUSIC_ENABLED, true),
+    dir: path.resolve(ROOT, process.env.MUSIC_DIR || 'assets/music'),
+  },
+  giftIconDir: path.join(ROOT, 'assets', 'gift_icon'),
+  allowMousePlay: bool(process.env.ALLOW_MOUSE_PLAY, true),
+  ttsProvider: process.env.TTS_PROVIDER || 'browser',
+  logLevel: process.env.LOG_LEVEL || 'info',
+};
+
+export const GAME_DEFAULTS = {
+  cols: 6,
+  rows: 6,
+  boardSizeMode: 'auto', // auto | fixed
+  difficulty: 'normal', // easy | normal | hard
+  tileTypes: 0, // 0 = derived from level + difficulty
+  cooldownMs: 2000,
+  autoPlayEnabled: true,
+  autoPlayIdleMs: 60000,
+  autoPlayMoveMs: 1800,
+  moveSpeed: 1,
+  mascotEnabled: true,
+  voiceEnabled: true,
+  voiceVolume: 0.85,
+  speechFrequency: 'normal', // low | normal | high
+  mascotSpeed: 1,
+  musicEnabled: true,
+  musicVolume: 0.3,
+  musicShuffle: false, // sequential LOOP ALL by default; shuffle is one admin toggle
+  stopGameEnabled: false,
+  giftTiers: [
+    { tier: 1, label: 'Tier 1 - 1 coin', minCoins: 1, maxCoins: 1, action: 'HINT', enabled: true },
+    { tier: 2, label: 'Tier 2 - small gift', minCoins: 2, maxCoins: 49, action: 'REVEAL_PAIR', enabled: true },
+    { tier: 3, label: 'Tier 3 - medium gift', minCoins: 50, maxCoins: 299, action: 'CLEAR_HALF_BOARD', enabled: true },
+    { tier: 4, label: 'Tier 4 - large gift', minCoins: 300, maxCoins: 999, action: 'COMPLETE_LEVEL', enabled: true },
+    { tier: 5, label: 'Tier 5 - super large gift', minCoins: 1000, maxCoins: null, action: 'STOP_GAME', enabled: true },
+  ],
+  giftRules: [], // per giftId overrides: { giftId, name, tier, action, enabled }
+};

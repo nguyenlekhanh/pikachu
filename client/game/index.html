@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>PIKACHU LIVE</title>
+    <link rel="stylesheet" href="/css/game.css" />
+  </head>
+  <body>
+    <div id="stage" aria-live="polite">
+      <div class="stage-bg"></div>
+      <div class="spark spark-1"></div>
+      <div class="spark spark-2"></div>
+      <div class="spark spark-3"></div>
+
+      <header id="topbar">
+        <div class="brand">
+          <div class="brand-badge">⚡</div>
+          <div class="brand-text">
+            <h1>PIKACHU <span>LIVE</span></h1>
+            <div id="connChip" class="chip chip-offline" title="TikTok connection status">
+              <span class="dot"></span><span class="chip-label">MOCK MODE</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat">
+            <span class="stat-label">LEVEL</span>
+            <span class="stat-value" id="statLevel">1</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">TILES LEFT</span>
+            <span class="stat-value" id="statRemaining">36</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">MATCHES</span>
+            <span class="stat-value" id="statMatches">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">STATUS</span>
+            <span class="stat-value stat-status" id="statStatus">RUNNING</span>
+          </div>
+        </div>
+      </header>
+
+      <footer id="footer">
+        <p class="footer-main">COMMENT TWO TILE POSITIONS TO PLAY!</p>
+        <p class="footer-example">Example: <b>A1 B1</b> &nbsp;·&nbsp; TYPE <b>TOP</b> TO VIEW THE LEADERBOARD</p>
+        <p class="footer-commands">
+          <b>HELP</b> instructions &nbsp;·&nbsp; <b>ME</b> your score &nbsp;·&nbsp; <b>RANK</b> your rank &nbsp;·&nbsp;
+          <b>HINT</b> a pair &nbsp;·&nbsp; <b>JOIN</b> to play
+        </p>
+      </footer>
+
+      <section id="giftLegend" class="gift-legend" aria-label="What each gift does">
+        <div id="giftLegendItems" class="gift-legend-items"></div>
+      </section>
+
+      <div id="boardFrame">
+        <div id="boardBox" aria-label="Tile matching board"></div>
+        <div id="autoChip" class="auto-chip hidden">AUTO PLAY</div>
+        <div id="lastMove" class="last-move hidden"></div>
+      </div>
+
+      <section id="leaderboardPanel" class="panel">
+        <div class="panel-head">
+          <h2>LEADERBOARD</h2>
+          <span class="panel-meta" id="playerCount">0 PLAYERS</span>
+        </div>
+        <ol id="leaderboardList" class="lb-list"></ol>
+      </section>
+
+      <section id="feedPanel" class="panel panel-feed">
+        <div class="panel-head">
+          <h2>LIVE FEED</h2>
+          <span class="panel-meta">TYPE TOP TO VIEW</span>
+        </div>
+        <ul id="feedList" class="feed-list"></ul>
+      </section>
+
+      <div id="mascotLayer" class="mascot-layer" aria-hidden="true"></div>
+      <div id="toastStack" class="toast-stack"></div>
+      <div id="overlayRoot" class="overlay-root"></div>
+    </div>
+
+    <script src="/vendor/phaser.min.js"></script>
+    <script type="module" src="/js/main.js?v=5"></script>
+  </body>
+</html>

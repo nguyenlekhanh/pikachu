@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PIKACHU LIVE - Admin</title>
+    <link rel="stylesheet" href="/admin-assets/admin.css" />
+  </head>
+  <body>
+    <div id="loginGate" class="gate">
+      <form id="loginForm" class="gate-card">
+        <h1>PIKACHU LIVE <span>ADMIN</span></h1>
+        <p>Enter the admin token from your <code>.env</code> file (ADMIN_TOKEN).</p>
+        <input id="tokenInput" type="password" placeholder="Admin token" autocomplete="current-password" />
+        <button type="submit">Unlock dashboard</button>
+        <p id="loginError" class="error"></p>
+        <p class="hint">The token stays in this browser tab only. It is never sent to the overlay.</p>
+      </form>
+    </div>
+
+    <div id="app" class="app hidden">
+      <aside class="sidebar">
+        <div class="logo">⚡ <span>PIKACHU<small>LIVE ADMIN</small></span></div>
+        <nav>
+          <button class="nav active" data-tab="game">Game control</button>
+          <button class="nav" data-tab="settings">Game settings</button>
+          <button class="nav" data-tab="gifts">Gift settings</button>
+          <button class="nav" data-tab="mascot">Mascot</button>
+          <button class="nav" data-tab="music">Music</button>
+          <button class="nav" data-tab="tiktok">TikFinity</button>
+          <button class="nav" data-tab="logs">Event log</button>
+        </nav>
+        <div class="sidebar-foot">
+          <a href="/" target="_blank" rel="noreferrer">Open overlay ↗</a>
+          <button id="logout" class="link">Lock dashboard</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="statusbar" id="statusbar"></div>
+
+        <!-- GAME CONTROL -->
+        <section class="tab-panel active" data-panel="game">
+          <h2>Game control</h2>
+          <div class="card">
+            <div class="row buttons">
+              <button data-action="start">▶ Start</button>
+              <button data-action="pause">⏸ Pause</button>
+              <button data-action="resume">⏵ Resume</button>
+              <button data-action="restart" class="warn">⟳ Restart game</button>
+              <button data-action="autoplay-on">🤖 Auto play on</button>
+              <button data-action="autoplay-off">🛑 Auto play off</button>
+              <button data-action="reset-leaderboard" class="danger">Reset leaderboard</button>
+              <button data-action="stop" class="danger">Stop game (game over)</button>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="card">
+              <h3>Live game state</h3>
+              <dl id="gameState" class="kv"></dl>
+            </div>
+            <div class="card">
+              <h3>Leaderboard</h3>
+              <div id="leaderboard" class="mini-lb"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- GAME SETTINGS -->
+        <section class="tab-panel" data-panel="settings">
+          <h2>Game settings</h2>
+          <div class="card">
+            <form id="settingsForm" class="form-grid">
+              <label>Board size mode
+                <select name="boardSizeMode">
+                  <option value="auto">Auto (grows with level)</option>
+                  <option value="fixed">Fixed size</option>
+                </select>
+              </label>
+              <label>Columns <input type="number" name="cols" min="4" max="10" /></label>
+              <label>Rows <input type="number" name="rows" min="4" max="10" /></label>
+              <label>Difficulty
+                <select name="difficulty">
+                  <option value="easy">Easy</option>
+                  <option value="normal">Normal</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+              <label>Tile types (0 = auto) <input type="number" name="tileTypes" min="0" max="15" /></label>
+              <label>Player cooldown (ms) <input type="number" name="cooldownMs" min="500" max="30000" step="100" /></label>
+              <label>Auto play after idle (ms) <input type="number" name="autoPlayIdleMs" min="5000" max="600000" step="1000" /></label>
+              <label>Auto play move interval (ms) <input type="number" name="autoPlayMoveMs" min="500" max="20000" step="100" /></label>
+              <label>Animation speed <input type="number" name="moveSpeed" min="0.25" max="3" step="0.05" /></label>
+              <label class="checkbox"><input type="checkbox" name="autoPlayEnabled" /> Auto play enabled</label>
+              <label class="checkbox"><input type="checkbox" name="stopGameEnabled" /> Allow STOP_GAME gift</label>
+            </form>
+            <div class="row">
+              <button id="saveSettings">Save settings</button>
+              <span id="settingsNote" class="note"></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- GIFT SETTINGS -->
+        <section class="tab-panel" data-panel="gifts">
+          <h2>Gift settings</h2>
+          <div class="card">
+            <h3>Gift tiers by coin value</h3>
+            <p class="note">Gifts are matched by gift ID first, then by the coin value of the completed streak.</p>
+            <table class="table" id="tierTable">
+              <thead><tr><th>Tier</th><th>Label</th><th>Min coins</th><th>Max coins</th><th>Action</th><th>Enabled</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <h3>Per gift ID overrides</h3>
+            <p class="note">Use real gift IDs from TikFinity. Overrides take priority over the tier table.</p>
+            <table class="table" id="ruleTable">
+              <thead><tr><th>Gift ID</th><th>Name</th><th>Tier</th><th>Action</th><th>Enabled</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <div class="row inline-form">
+              <input id="newGiftId" placeholder="Gift ID (e.g. 5655)" />
+              <input id="newGiftName" placeholder="Label" />
+              <select id="newGiftTier">
+                <option value="1">Tier 1</option>
+                <option value="2">Tier 2</option>
+                <option value="3">Tier 3</option>
+                <option value="4">Tier 4</option>
+                <option value="5">Tier 5</option>
+              </select>
+              <select id="newGiftAction">
+                <option>HINT</option>
+                <option>REVEAL_PAIR</option>
+                <option>CLEAR_HALF_BOARD</option>
+                <option>COMPLETE_LEVEL</option>
+                <option>STOP_GAME</option>
+              </select>
+              <button id="addGiftRule">Add mapping</button>
+            </div>
+            <button id="saveGifts">Save gift configuration</button>
+            <span id="giftNote" class="note"></span>
+          </div>
+
+          <div class="card">
+            <h3>Gifts seen from TikTok</h3>
+            <p class="note">Collected automatically from real gift events so you can map them without guessing IDs.</p>
+            <table class="table" id="giftLibrary">
+              <thead><tr><th>Gift ID</th><th>Name</th><th>Coins</th><th>Count</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- MASCOT -->
+        <section class="tab-panel" data-panel="mascot">
+          <h2>Mascot</h2>
+          <div class="card">
+            <form id="mascotForm" class="form-grid">
+              <label class="checkbox"><input type="checkbox" name="mascotEnabled" /> Mascot enabled</label>
+              <label class="checkbox"><input type="checkbox" name="voiceEnabled" /> Voice enabled</label>
+              <label>Voice volume (0-1) <input type="number" name="voiceVolume" min="0" max="1" step="0.05" /></label>
+              <label>Speech frequency
+                <select name="speechFrequency">
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+              <label>Mascot speed <input type="number" name="mascotSpeed" min="0.25" max="3" step="0.05" /></label>
+            </form>
+            <div class="row">
+              <button id="saveMascot">Save mascot settings</button>
+              <span id="mascotNote" class="note"></span>
+            </div>
+            <p class="note">Voice uses the browser's American English speech synthesis. OBS browser sources often have no voices installed; see docs/OBS_SETUP.md.</p>
+          </div>
+        </section>
+
+        <!-- MUSIC -->
+        <section class="tab-panel" data-panel="music">
+          <h2>Background music</h2>
+          <div class="card">
+            <form id="musicForm" class="form-grid">
+              <label class="checkbox"><input type="checkbox" name="musicEnabled" /> Music enabled</label>
+              <label class="checkbox"><input type="checkbox" name="musicShuffle" /> Shuffle playlist</label>
+              <label>Music volume (0-1) <input type="number" name="musicVolume" min="0" max="1" step="0.05" /></label>
+            </form>
+            <div class="row">
+              <button id="saveMusic">Save music settings</button>
+              <span id="musicNote" class="note"></span>
+            </div>
+            <p class="note">Music ducks automatically while the mascot speaks. Keep the volume at 0.3 or lower when the voice is on.</p>
+          </div>
+
+          <div class="card">
+            <h3>Playback</h3>
+            <div class="row transport">
+              <button id="musicToggle" class="transport-btn" title="Pause or resume the music in every overlay">⏸ Pause</button>
+              <button id="nextMusic" class="transport-btn next" title="Stop the current track and start the next one in every overlay">⏭ NEXT MUSIC</button>
+              <span id="musicTransportNote" class="note"></span>
+            </div>
+            <div class="now-playing">
+              <span class="np-label">NOW PLAYING</span>
+              <b id="musicNowPlaying">—</b>
+              <span id="musicMode" class="tag">LOOP ALL</span>
+            </div>
+            <p class="note">NEXT MUSIC stops the current track and starts the next one in every open overlay. Loop All wraps back to the first track after the last one; Shuffle picks another random track.</p>
+          </div>
+
+          <div class="card">
+            <h3>Playlist</h3>
+            <div id="musicStatus" class="kv-block"></div>
+            <table class="table" id="musicTable">
+              <thead><tr><th>#</th><th>File</th><th>Title</th><th>Artist</th><th>License</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <div class="row">
+              <button id="reloadMusic">Reload playlist</button>
+              <span class="note">Tracks live in <code>assets/music/</code> with <code>playlist.json</code>.</span>
+            </div>
+            <p id="musicWarnings" class="note"></p>
+            <p class="note">Only play music you are licensed to broadcast. See docs/MUSIC.md and assets/music/LICENSES.md.</p>
+          </div>
+        </section>
+
+        <!-- TIKTOK -->
+        <section class="tab-panel" data-panel="tiktok">
+          <h2>TikFinity integration</h2>
+          <div class="card">
+            <h3>Connection</h3>
+            <div id="tiktokStatus" class="kv-block"></div>
+            <div class="row inline-form">
+              <input id="tikfinityUrl" placeholder="ws://127.0.0.1:21213/" />
+              <button id="connectTikfinity">Connect</button>
+              <button id="setTikfinityUrl">Apply URL</button>
+              <button id="disconnectTikfinity" class="warn">Disconnect</button>
+            </div>
+            <p class="note">
+              TikFinity Desktop must run on this PC with its Event API enabled. The adapter only reports
+              "connected" after the socket is actually open. If it is offline the game keeps running.
+            </p>
+          </div>
+
+          <div class="card">
+            <h3>Mock mode &amp; test events</h3>
+            <div class="row buttons">
+              <button id="simulateOn">Start mock simulator</button>
+              <button id="simulateOff" class="warn">Stop mock simulator</button>
+            </div>
+            <div class="row inline-form">
+              <input id="testUser" placeholder="username" value="TestViewer" />
+              <input id="testText" placeholder="A1 B1" value="A1 B1" />
+              <button id="testComment">Send test comment</button>
+            </div>
+            <div class="row inline-form">
+              <input id="testGiftUser" placeholder="username" value="TestViewer" />
+              <input id="testGiftId" placeholder="giftId" value="mock-rose" />
+              <input id="testGiftName" placeholder="gift name" value="Rose" />
+              <select id="testGiftCoins">
+                <option value="1">1 coin (Tier 1 hint)</option>
+                <option value="5">5 coins (Tier 2 reveal)</option>
+                <option value="99">99 coins (Tier 3 half board)</option>
+                <option value="400">400 coins (Tier 4 complete level)</option>
+                <option value="1500">1500 coins (Tier 5 stop game)</option>
+              </select>
+              <button id="testGift">Send test gift</button>
+            </div>
+            <p id="testNote" class="note"></p>
+          </div>
+
+          <div class="card">
+            <h3>Troubleshooting</h3>
+            <ol class="trouble">
+              <li>Open TikFinity Desktop and log in, then connect your TikTok account.</li>
+              <li>Enable the Event API / local WebSocket feature in TikFinity (default ws://localhost:21213/).</li>
+              <li>Make sure port 21213 is not blocked and no other app is bound to it.</li>
+              <li>Send a test comment in TikFinity's Event Simulator and watch "last event" above.</li>
+              <li>If the status stays red, the game is still fully playable through mock mode.</li>
+            </ol>
+            <p class="note">Full guide: docs/TIKFINITY_SETUP.md</p>
+          </div>
+        </section>
+
+        <!-- LOGS -->
+        <section class="tab-panel" data-panel="logs">
+          <h2>Event log</h2>
+          <div class="card">
+            <div class="row">
+              <button id="refreshLogs">Refresh</button>
+              <span class="note">Last 120 entries, newest first.</span>
+            </div>
+            <div id="logTable" class="logs"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/admin-assets/admin.js?v=3"></script>
+  </body>
+</html>

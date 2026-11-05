@@ -1,0 +1,99 @@
+{
+  "name": "Pikachu Live - Stream Music",
+  "shuffle": false,
+  "volume": 0.3,
+  "fadeMs": 1200,
+  "tracks": [
+    {
+      "file": "balloon-game.mp3",
+      "title": "Balloon Game",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "happy-happy-game-show.mp3",
+      "title": "Happy Happy Game Show",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "pixelland.mp3",
+      "title": "Pixelland",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "bit-shift.mp3",
+      "title": "Bit Shift",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "overworld.mp3",
+      "title": "Overworld",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "fluffing-a-duck.mp3",
+      "title": "Fluffing a Duck",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "monkeys-spinning-monkeys.mp3",
+      "title": "Monkeys Spinning Monkeys",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "carefree.mp3",
+      "title": "Carefree",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "life-of-riley.mp3",
+      "title": "Life of Riley",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "jaunty-gumption.mp3",
+      "title": "Jaunty Gumption",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "silly-fun.mp3",
+      "title": "Silly Fun",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "spazzmatica-polka.mp3",
+      "title": "Spazzmatica Polka",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    },
+    {
+      "file": "happy-bee.mp3",
+      "title": "Happy Bee",
+      "artist": "Kevin MacLeod",
+      "license": "CC BY 4.0",
+      "volume": 1
+    }
+  ]
+}

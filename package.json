@@ -1,0 +1,24 @@
+{
+  "name": "pikachu-live-us",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PIKACHU LIVE US V1 - interactive tile matching game for TikTok LIVE via TikFinity, built for a vertical OBS overlay.",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test tests/",
+    "smoke": "node scripts/smoke.js",
+    "demo": "node scripts/demo-events.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "phaser": "^3.87.0",
+    "ws": "^8.18.0"
+  }
+}
