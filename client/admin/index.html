@@ -42,6 +42,17 @@
         <!-- GAME CONTROL -->
         <section class="tab-panel active" data-panel="game">
           <h2>Game control</h2>
+
+          <div class="card session-card">
+            <h3>LIVE SESSION CONTROL</h3>
+            <p class="note">Clear demo data and start a fresh livestream session.</p>
+            <div class="row buttons">
+              <button id="resetSession" class="danger reset-session-btn">RESET GAME &amp; SESSION</button>
+              <span id="resetSessionNote" class="note"></span>
+            </div>
+            <div id="sessionInfo" class="kv-block session-info"></div>
+          </div>
+
           <div class="card">
             <div class="row buttons">
               <button data-action="start">▶ Start</button>
@@ -296,6 +307,26 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <!-- Two-step confirmation for the pre-LIVE reset. -->
+    <div id="resetDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="resetDialogTitle">
+      <div class="dialog">
+        <h3 id="resetDialogTitle">Start a Fresh LIVE Session?</h3>
+        <p id="resetDialogMessage">
+          This will permanently clear current session scores, demo events, player statistics, and game
+          progress. Your game settings, gift mappings, music library, and TikFinity configuration will
+          remain unchanged.
+        </p>
+        <p id="resetDialogWarning" class="dialog-warn hidden">
+          Final confirmation: this cannot be undone. Every player and every score from the current
+          session will be deleted.
+        </p>
+        <div class="row buttons">
+          <button id="resetCancel">Cancel</button>
+          <button id="resetConfirm" class="danger">Continue</button>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/admin-assets/admin.js?v=3"></script>

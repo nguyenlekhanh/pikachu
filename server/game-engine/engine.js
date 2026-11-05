@@ -10,6 +10,7 @@
  */
 
 import { EventEmitter } from 'node:events';
+import crypto from 'node:crypto';
 import { GAME_DEFAULTS } from '../config.js';
 import {
   clearDownTo,
@@ -72,6 +73,19 @@ export function parseCommand(rawText, cols = 10, rows = 10) {
 
 const cellPayload = (cell) => ({ c: cell.c, r: cell.r, label: labelOf(cell.c - 1, cell.r - 1) });
 
+/** A reset cannot be repeated faster than this, even from a stuck double-click. */
+export const SESSION_RESET_COOLDOWN_MS = 5000;
+
+let sessionSeq = 0;
+
+/** Short, human-readable id for one LIVE session (monotonic + random). */
+export function createSessionId(now = Date.now()) {
+  sessionSeq = (sessionSeq + 1) % 1_000_000;
+  const stamp = Math.floor(now).toString(36).toUpperCase();
+  const seq = sessionSeq.toString(36).toUpperCase();
+  return `LIVE-${stamp}-${seq}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+}
+
 export class GameEngine extends EventEmitter {
   constructor({ store, settings = {}, logger = null, rng = Math.random, now = () => Date.now() }) {
     super();
@@ -80,6 +94,11 @@ export class GameEngine extends EventEmitter {
     this.logger = logger;
     this.rng = rng;
     this.now = now;
+
+    this.sessionId = createSessionId(this.now());
+    this.sessionStartedAt = this.now();
+    this.suspended = false;
+    this.lastResetAt = 0;
 
     this.settings = { ...GAME_DEFAULTS, ...settings };
     this.state = {
@@ -210,6 +229,115 @@ export class GameEngine extends EventEmitter {
     return this.leaderboard();
   }
 
+  /**
+   * True when an event cannot belong to the session that is running now.
+   *
+   * TikTok/TikFinity events carry a timestamp in milliseconds for some kinds and
+   * seconds for others, so only plausible epoch-millisecond values are compared.
+   * An explicit mismatched sessionId is always stale.
+   */
+  isStaleEvent(event = {}) {
+    if (!event || typeof event !== 'object') return false;
+    if (event.sessionId && event.sessionId !== this.sessionId) return true;
+    const raw = Number(event.ts ?? event.timestamp ?? event.receivedAt);
+    if (Number.isFinite(raw) && raw > 1e11 && raw < this.sessionStartedAt - 5000) return true;
+    return false;
+  }
+
+  /**
+   * Reset everything the streamer does not want on a real LIVE, atomically.
+   *
+   * Order matters: the database transaction runs first, so a storage failure
+   * leaves the in-memory session untouched (players, board, timers, level).
+   * While the reset runs, `suspended` rejects comments, gifts, moves and ticks,
+   * and any event that still belongs to the old session is dropped afterwards.
+   *
+   * Configuration is never touched here: settings live in `this.settings` and in
+   * the store's `config` row, and neither is written or cleared by this method.
+   */
+  resetSession({ reason = 'admin', actor = 'admin' } = {}) {
+    const now = this.now();
+    if (this.suspended) {
+      return { ok: false, reason: 'reset-in-progress', error: 'A reset is already running.' };
+    }
+    if (this.lastResetAt && now - this.lastResetAt < SESSION_RESET_COOLDOWN_MS) {
+      return {
+        ok: false,
+        reason: 'too-soon',
+        error: 'A reset just finished. Give it a few seconds before resetting again.',
+        retryInMs: SESSION_RESET_COOLDOWN_MS - (now - this.lastResetAt),
+      };
+    }
+
+    this.suspended = true;
+    try {
+      this.store.resetSession();
+    } catch (error) {
+      this.suspended = false;
+      this.logger?.error?.('Session reset failed, previous session kept:', error.message);
+      return {
+        ok: false,
+        reason: 'storage-failed',
+        error: 'Database reset failed, so the previous session was kept.',
+      };
+    }
+
+    const previousSessionId = this.sessionId;
+    this.sessionId = createSessionId(now);
+    this.sessionStartedAt = now;
+    this.lastResetAt = now;
+
+    // Game progress and counters.
+    this.state.status = 'running';
+    this.state.level = 1;
+    this.state.totalMatches = 0;
+    this.state.levelMatches = 0;
+    this.state.startedAt = now;
+    this.state.gameOverAt = null;
+    this.state.gameOverReason = null;
+    this.state.autoPlay = false;
+
+    // Pending work: level transition, auto play schedule and speech cooldowns.
+    this.pendingLevelAt = null;
+    this.levelCompletePending = false;
+    this.nextAutoMoveAt = 0;
+    this.autoMoveCount = 0;
+    this.idleStage = 0;
+    this.lastHumanAt = now;
+    this.lastSayAt = 0;
+    this.lastSaidKind = null;
+    this.saidAt?.clear();
+
+    // Temporary per-player state: combos, cooldowns, hint/dedupe caches.
+    this.runtimePlayers.clear();
+    this.recentCommands.clear();
+    this.seenGifts.clear();
+
+    // Fresh, solvable Level 1 board.
+    this.buildLevel();
+    this.bumpRev();
+
+    const payload = {
+      action: 'reset',
+      sessionId: this.sessionId,
+      previousSessionId,
+      startedAt: now,
+      level: this.state.level,
+      ts: now,
+      actor,
+      reason,
+    };
+
+    this.emit('session', payload);
+    this.emit('feed', { kind: 'system', text: 'New LIVE session started - fresh Level 1 board!', ts: now });
+    this.emit('leaderboard', this.leaderboard());
+    this.emit('state', this.snapshot());
+    this.emit('mascot', { text: "Fresh game! Let's play!", emotion: 'excited', priority: 3, ts: now });
+
+    this.suspended = false;
+    return { ok: true, ...payload, game: this.snapshot(), leaderboard: this.leaderboard() };
+  }
+
   // ------------------------------------------------------------------- levels
 
   buildLevel() {
@@ -303,6 +431,8 @@ export class GameEngine extends EventEmitter {
    * @returns {{ok:boolean, reason?:string, type?:string}}
    */
   handleChat(event = {}) {
+    if (this.suspended) return { ok: false, reason: 'reset-in-progress' };
+    if (this.isStaleEvent(event)) return { ok: false, reason: 'stale-session' };
     const text = String(event.text ?? event.comment ?? '').trim();
     if (!text) return { ok: false, reason: 'empty' };
 
@@ -432,6 +562,7 @@ export class GameEngine extends EventEmitter {
    * Validate and apply a move. Board mutation is synchronous and atomic.
    */
   performMove(playerId, username, a, b) {
+    if (this.suspended) return { ok: false, reason: 'reset-in-progress' };
     const now = this.now();
     if (this.state.status === 'gameover') {
       this.notify(playerId, username, 'The game is over. Waiting for a restart!');
@@ -543,6 +674,8 @@ export class GameEngine extends EventEmitter {
    * the completed streak triggers a game action.
    */
   handleGift(event = {}) {
+    if (this.suspended) return { ok: false, reason: 'reset-in-progress' };
+    if (this.isStaleEvent(event)) return { ok: false, reason: 'stale-session' };
     const now = this.now();
     const giftId = event.giftId ?? event.gift_id;
     if (giftId === undefined || giftId === null || String(giftId) === '') {
@@ -727,6 +860,7 @@ export class GameEngine extends EventEmitter {
   // --------------------------------------------------------------------- tick
 
   tick() {
+    if (this.suspended) return;
     const now = this.now();
 
     if (this.seenGifts.size > 0) {
@@ -873,6 +1007,8 @@ export class GameEngine extends EventEmitter {
     const remaining = this.board ? remainingTiles(this.board) : 0;
     return {
       rev: this.state.rev,
+      sessionId: this.sessionId,
+      sessionStartedAt: this.sessionStartedAt,
       status: this.state.status,
       level: this.state.level,
       cols: this.board?.cols ?? this.settings.cols,

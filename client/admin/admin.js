@@ -119,6 +119,7 @@ function render() {
   if (!data) return;
   renderStatus(data);
   renderGame(data);
+  renderSession(data);
   if (!state.giftDraft) state.giftDraft = buildGiftDraft(data.settings);
   if (!state.dirty.settings) fillForm('#settingsForm', data.settings);
   if (!state.dirty.mascot) fillForm('#mascotForm', data.settings);
@@ -184,6 +185,21 @@ function renderGame(data) {
         )
         .join('')
     : '<div class="empty">No scores yet.</div>';
+}
+
+function renderSession(data) {
+  const game = data.game || {};
+  const rows = [
+    ['Session ID', game.sessionId || '—'],
+    ['Session started', game.sessionStartedAt ? new Date(game.sessionStartedAt).toLocaleString() : '—'],
+    ['Level', String(game.level ?? '—')],
+    ['Tiles remaining', String(game.remaining ?? '—')],
+  ];
+  const target = $('#sessionInfo');
+  if (!target) return;
+  target.innerHTML = rows
+    .map(([label, value]) => `<div class="cell"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`)
+    .join('');
 }
 
 // -------------------------------------------------------------------- forms
@@ -633,6 +649,73 @@ function renderLogs() {
 }
 
 $('#refreshLogs').addEventListener('click', refresh);
+
+// --------------------------------------------------------------- live session
+
+let resetStep = 0;
+let resetBusy = false;
+
+function openResetDialog() {
+  resetStep = 1;
+  $('#resetDialogTitle').textContent = 'Start a Fresh LIVE Session?';
+  $('#resetDialogMessage').textContent =
+    'This will permanently clear current session scores, demo events, player statistics, and game progress. Your game settings, gift mappings, music library, and TikFinity configuration will remain unchanged.';
+  $('#resetDialogWarning').classList.add('hidden');
+  $('#resetConfirm').textContent = 'Continue';
+  $('#resetDialog').classList.remove('hidden');
+  $('#resetConfirm').focus();
+}
+
+function closeResetDialog() {
+  resetStep = 0;
+  $('#resetDialog').classList.add('hidden');
+}
+
+$('#resetSession').addEventListener('click', openResetDialog);
+$('#resetCancel').addEventListener('click', closeResetDialog);
+$('#resetDialog').addEventListener('click', (event) => {
+  if (event.target === $('#resetDialog')) closeResetDialog();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !$('#resetDialog').classList.contains('hidden')) closeResetDialog();
+});
+
+$('#resetConfirm').addEventListener('click', async () => {
+  // Step 1 -> 2 asks again with an explicit final warning.
+  if (resetStep === 1) {
+    resetStep = 2;
+    $('#resetDialogTitle').textContent = 'Final confirmation';
+    $('#resetDialogMessage').textContent =
+      'The current LIVE session will be closed and replaced by a brand-new Level 1 board.';
+    $('#resetDialogWarning').classList.remove('hidden');
+    $('#resetConfirm').textContent = 'YES, RESET NOW';
+    return;
+  }
+
+  if (resetBusy) return;
+  const button = $('#resetConfirm');
+  const note = $('#resetSessionNote');
+  resetBusy = true;
+  button.disabled = true;
+  button.textContent = 'RESETTING…';
+  try {
+    const result = await api('/api/admin/game', { method: 'POST', body: { action: 'reset-session' } });
+    note.textContent = `Fresh session ${result.session.id} ready at ${new Date(
+      result.session.startedAt
+    ).toLocaleTimeString()} — Level ${result.game.level}, ${result.game.remaining} tiles.`;
+    note.className = 'note ok';
+    closeResetDialog();
+    await refresh();
+  } catch (error) {
+    note.textContent = error.message;
+    note.className = 'note bad';
+    closeResetDialog();
+  } finally {
+    resetBusy = false;
+    button.disabled = false;
+    button.textContent = 'YES, RESET NOW';
+  }
+});
 
 // ----------------------------------------------------------------------- boot
 

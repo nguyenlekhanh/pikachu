@@ -136,6 +136,9 @@ export class SqliteStore {
       reset: this.db.prepare(
         'UPDATE players SET score = 0, matches = 0, attempts = 0, gift_coins = 0, gift_count = 0'
       ),
+      deletePlayers: this.db.prepare('DELETE FROM players'),
+      deleteGifts: this.db.prepare('DELETE FROM gifts'),
+      deleteLogs: this.db.prepare('DELETE FROM event_log'),
       getConfig: this.db.prepare("SELECT value FROM config WHERE key = 'game'"),
       setConfig: this.db.prepare(`
         INSERT INTO config (key, value, updated_at) VALUES ('game', ?, ?)
@@ -232,6 +235,26 @@ export class SqliteStore {
 
   resetLeaderboard() {
     this.stmts.reset.run();
+  }
+
+  /**
+   * Clear all session-scoped rows in one transaction.
+   *
+   * `config` (game/gift/music/TikFinity settings, gift mappings, database
+   * schema) is kept. Session data — players, gift statistics and the event log
+   * (demo/test entries) — is removed; the caller writes the fresh reset entry
+   * immediately after, so the audit trail starts with the new session.
+   *
+   * If any statement throws, better-sqlite3 rolls the whole transaction back and
+   * the previous session survives untouched.
+   */
+  resetSession() {
+    const run = this.db.transaction(() => {
+      this.stmts.deletePlayers.run();
+      this.stmts.deleteGifts.run();
+      this.stmts.deleteLogs.run();
+    });
+    run();
   }
 
   getConfig() {

@@ -69,6 +69,9 @@ engine.on('mascot', (line) => hub.broadcast('mascot', line));
 engine.on('feed', (entry) => hub.broadcast('feed', entry));
 engine.on('notice', (notice) => hub.broadcast('notice', notice));
 engine.on('leaderboard', (board) => hub.broadcast('leaderboard', board));
+// Fired once per pre-LIVE reset; overlays drop the old feed before the fresh
+// state snapshot arrives.
+engine.on('session', (session) => hub.broadcast('session', session));
 engine.on('overlay', (overlay) => hub.broadcast('overlay', overlay));
 
 // ------------------------------------------------------------- events -> engine

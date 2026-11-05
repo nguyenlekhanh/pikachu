@@ -189,6 +189,16 @@ function handleMessage(type, payload) {
     case 'viewers':
       ui.setViewers(payload.count);
       break;
+    case 'session':
+      // Admin RESET FOR NEW LIVE: drop the old feed/toasts before the fresh
+      // state snapshot (sent right after) repaints the board and leaderboards.
+      if (payload && payload.action === 'reset') {
+        ui.clearSession();
+        mascot.hideBubble();
+        mascot.setEmotion('neutral');
+        ui.toast('Fresh LIVE session started', 'ok');
+      }
+      break;
     default:
       break;
   }

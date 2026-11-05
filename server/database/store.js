@@ -136,6 +136,19 @@ export class MemoryStore {
     }
   }
 
+  /**
+   * Wipe session data for a brand new LIVE: every player row and the gift
+   * statistics collected during the demo/session. Configuration (this.configValue)
+   * and the audit log are deliberately kept.
+   */
+  resetSession() {
+    this.players.clear();
+    this.giftLibrary.clear();
+    // Session/demo log entries (test events included). The reset entry itself is
+    // written by the caller after this returns, so it survives.
+    this.logs = [];
+  }
+
   getConfig() {
     return this.configValue ? JSON.parse(JSON.stringify(this.configValue)) : null;
   }
@@ -229,6 +242,12 @@ export class JsonStore extends MemoryStore {
   ensurePlayer(...args) { const r = super.ensurePlayer(...args); this._touch(); return r; }
   setConfig(...args) { const r = super.setConfig(...args); this._touch(); return r; }
   resetLeaderboard(...args) { const r = super.resetLeaderboard(...args); this._touch(); return r; }
+  resetSession(...args) {
+    const r = super.resetSession(...args);
+    this._touch();
+    this.flush();
+    return r;
+  }
   recordGift(...args) { const r = super.recordGift(...args); this._touch(); return r; }
   log(...args) { const r = super.log(...args); this._touch(); return r; }
 

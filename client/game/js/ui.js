@@ -260,6 +260,19 @@ export class UI {
     }
   }
 
+  /** New LIVE session: remove every trace of the previous one from the DOM. */
+  clearSession() {
+    this.feed = [];
+    this.renderFeed();
+    for (const toast of this.toasts) toast.remove();
+    this.toasts = [];
+    this.el.toastStack.innerHTML = '';
+    if (this.el.lastMove) this.el.lastMove.textContent = '';
+    clearTimeout(this.lastMoveTimer);
+    this.lastMoveTimer = null;
+    this.lastLeaderId = null;
+  }
+
   // ------------------------------------------------------------------ toasts
 
   showNotice(notice) {

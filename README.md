@@ -152,6 +152,11 @@ hardcoded to a real TikTok gift ID, and every mapping is editable in **Admin →
 `http://localhost:3000/admin` — unlock with `ADMIN_TOKEN` from `.env` (stored in that tab's
 sessionStorage only; the overlay never receives it).
 
+- **LIVE SESSION CONTROL:** **RESET GAME & SESSION** wipes scores, players, gift/comment statistics,
+  the event feed and all game progress, then issues a new session ID and a freshly generated,
+  solvable Level 1 board — with a two-step confirmation. Settings, gift mappings, music, TikFinity
+  configuration, database schema and every asset are preserved, and the reset is one database
+  transaction (rollback keeps the previous session if it fails).
 - **Game control:** start, pause, resume, restart, auto play on/off, reset leaderboard, stop game.
 - **Game settings:** board size mode/fixed size, difficulty, tile types, cooldown, auto-play idle
   and move intervals, animation speed.
@@ -223,7 +228,7 @@ Details: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 ## 11. Tests and demo
 
 ```bash
-npm test        # 105 automated tests (matching, board, coordinates, engine, gifts, music queue/transport, TikFinity parsing)
+npm test        # 120 automated tests (matching, board, coordinates, engine, gifts, music queue/transport, session reset, TikFinity parsing)
 npm run smoke   # 16 end-to-end checks against the running server (HTTP, auth, WS, move, score, gift, music)
 npm run demo    # pushes a realistic comment + gift sequence into the running server
 ```

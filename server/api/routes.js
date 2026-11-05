@@ -199,6 +199,32 @@ export function createApiRouter({ engine, store, tikfinity, mock, hub, ingest, m
         store.log({ category: 'admin', message: 'Leaderboard reset from admin dashboard.' });
         snapshot = engine.snapshot();
         break;
+      case 'reset-session': {
+        // Full pre-LIVE reset: players, gift stats and progress are cleared in one
+        // transaction, a new session id is issued and the fresh Level 1 board is
+        // broadcast to every overlay. Settings/configuration are never touched.
+        const result = engine.resetSession({ reason: 'admin' });
+        if (!result.ok) {
+          const status = result.reason === 'too-soon' ? 429 : 409;
+          return res.status(status).json({ ok: false, error: result.error, reason: result.reason, retryInMs: result.retryInMs });
+        }
+        store.log({
+          category: 'admin',
+          message: `LIVE session reset: ${result.previousSessionId} -> ${result.sessionId}`,
+          meta: {
+            sessionId: result.sessionId,
+            previousSessionId: result.previousSessionId,
+            resetAt: result.startedAt,
+            actor: result.actor,
+          },
+        });
+        return res.json({
+          ok: true,
+          session: { id: result.sessionId, previousId: result.previousSessionId, startedAt: result.startedAt },
+          game: result.game,
+          leaderboard: result.leaderboard,
+        });
+      }
       case 'stop':
         snapshot = engine.stopGame('Admin stop');
         break;
