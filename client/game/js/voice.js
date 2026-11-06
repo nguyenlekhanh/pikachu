@@ -23,8 +23,13 @@ const PREFERRED = [
 const COOLDOWN = { low: 14000, normal: 7500, high: 3800 };
 
 export class Voice {
-  constructor() {
+  constructor({ onStart = null, onEnd = null, onError = null, onVoices = null } = {}) {
     this.supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+    // Real playback telemetry: the server must never assume speech happened.
+    this.onStart = onStart;
+    this.onEnd = onEnd;
+    this.onError = onError;
+    this.onVoices = onVoices;
     this.enabled = true;
     this.volume = 0.85;
     this.frequency = 'normal';
@@ -55,6 +60,7 @@ export class Voice {
       const english = this.voices.filter((voice) => /^en/i.test(voice.lang || ''));
       const pool = english.length ? english : this.voices;
       this.voice = [...pool].sort((a, b) => score(a) - score(b))[0] || null;
+      this.reportVoices();
     };
     load();
     window.speechSynthesis.addEventListener('voiceschanged', load);
@@ -79,8 +85,12 @@ export class Voice {
     return COOLDOWN[this.frequency] ?? COOLDOWN.normal;
   }
 
-  speak(text, { priority = 1, force = false } = {}) {
-    if (!this.supported || !this.enabled || !text) return false;
+  speak(text, { priority = 1, force = false, speechId = null } = {}) {
+    if (!this.supported) {
+      this.onError?.({ error: 'unsupported', text, speechId });
+      return false;
+    }
+    if (!this.enabled || !text) return false;
     const now = performance.now();
     // AI co-host lines are already rate limited server-side; force lets a real
     // generated reply reach TTS even right after a short game callout.
@@ -98,6 +108,15 @@ export class Voice {
       utterance.volume = this.volume;
       utterance.rate = 1.02 + Math.random() * 0.12;
       utterance.pitch = 1.04 + Math.random() * 0.18;
+      // A cancelled utterance fires its events after a newer line started; the
+      // server matches speech ids, but skipping them keeps the log clean.
+      utterance.onstart = () => this.onStart?.({ text, speechId });
+      utterance.onend = () => this.onEnd?.({ text, speechId });
+      utterance.onerror = (event) => {
+        const error = String(event?.error || 'speech-error');
+        if (error === 'interrupted' || error === 'canceled') return;
+        this.onError?.({ text, speechId, error });
+      };
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
       return true;
@@ -105,6 +124,15 @@ export class Voice {
       console.warn('[voice] speak failed:', error.message);
       return false;
     }
+  }
+
+  /** Tell the server how many voices this overlay really has (0 is a warning). */
+  reportVoices() {
+    this.onVoices?.({ available: this.available, count: this.voices.length, supported: this.supported });
+  }
+
+  status() {
+    return { supported: this.supported, available: this.available, count: this.voices.length };
   }
 
   cancel() {

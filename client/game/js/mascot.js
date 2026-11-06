@@ -202,7 +202,15 @@ export class Mascot {
     if (!this.enabled || !line.text) return;
     this.setEmotion(line.emotion || 'happy');
     this.showBubble(line.text, line.priority || 1);
-    if (this.voice) this.voice.speak(line.text, { priority: line.priority || 1, force: Boolean(line.ai) });
+    if (!this.voice) return;
+    const spoke = this.voice.speak(line.text, {
+      priority: line.priority || 1,
+      force: Boolean(line.ai),
+      speechId: line.speechId ?? null,
+    });
+    // Honest reporting: a line the voice layer never played must not leave the
+    // server waiting for a completion that will never arrive.
+    if (!spoke && line.speechId != null) this.onSpeechSkipped?.(line);
   }
 
   showBubble(text, priority = 1) {

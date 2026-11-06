@@ -238,6 +238,12 @@ hub.on('music-current', (message) => {
   musicTransport.noteCurrent(message.payload || {});
 });
 
+// The overlay is the only place that knows whether speech really started,
+// finished or failed. Zappy's status and watchdog depend on this telemetry.
+hub.on('tts-state', (message) => {
+  aiCohost.reportTts(message.payload || {});
+});
+
 hub.on('click', (message) => {
   if (!config.allowMousePlay) return;
   const { a, b } = message.payload || message || {};
@@ -331,6 +337,8 @@ logger.info(
 );
 logger.info(
   `AI co-host: ${aiCohost.enabled() ? 'enabled' : 'disabled'}, ` +
+    `${aiCohost.alwaysActive() ? 'always active' : 'chat driven'}, ` +
+    `watchdog ${aiCohost.watchdogOn() ? 'on' : 'off'}, ` +
     `${activeAi ? `${activeAi.name} · ${activeAi.model}` : 'no active provider'}`
 );
 

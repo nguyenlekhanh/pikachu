@@ -281,12 +281,21 @@ $('#testAiMascot').addEventListener('click', async () => {
   target.innerHTML = '';
   try {
     const result = await api('/api/admin/ai/test', { method: 'POST' });
+    const speech = result.speech || {};
     const rows = [
       ['Result', result.ok ? 'AI RESPONDED' : 'AI FAILED'],
       ['Provider', result.provider || '—'],
       ['Model', result.model || '—'],
       ['Response time', `${result.ms ?? 0} ms`],
       ['Generated line', result.response || result.error || '—'],
+      [
+        'Overlay TTS',
+        speech.voicesAvailable === false
+          ? 'NO SPEECH VOICES IN THIS BROWSER — the line would be text only'
+          : speech.voiceCount != null
+          ? `${speech.voiceCount} voice(s) available`
+          : 'not reported by the overlay yet',
+      ],
     ];
     target.innerHTML = rows
       .map(
@@ -861,22 +870,78 @@ function renderAiMascot(data) {
   }
   const provider = status.activeProvider;
   const last = status.lastResponse;
+  const speech = status.speech || {};
+  const watchdog = status.watchdog || {};
+  const autonomous = status.autonomous || {};
+  const queue = status.queue || {};
+  const request = status.request || {};
+
+  const ttsLabel = () => {
+    if (speech.state === 'speaking') return 'SPEAKING (confirmed by overlay)';
+    if (speech.pending) return 'PENDING — waiting for the overlay to start';
+    if (speech.state === 'error') return `ERROR — ${speech.error || 'speech failed'}`;
+    if (speech.voicesAvailable === false) return 'NO SPEECH VOICES IN THIS BROWSER (open the overlay in Chrome/Edge) — text only';
+    if (speech.voicesAvailable === null || speech.voicesAvailable === undefined) return 'UNKNOWN — no overlay has reported yet';
+    return `READY (${speech.voiceCount ?? 0} voice${speech.voiceCount === 1 ? '' : 's'})`;
+  };
+  const seconds = (ms) => (ms === null || ms === undefined ? '—' : `${Math.round(ms / 1000)}s`);
+  const sinceSpoken = speech.msSinceSpoken === null || speech.msSinceSpoken === undefined ? '—' : `${seconds(speech.msSinceSpoken)} ago`;
   const rows = [
-    ['AI mascot', status.enabled ? 'ENABLED' : 'DISABLED'],
+    ['Status', status.state],
     ['AI provider', provider ? `${provider.name} (${provider.providerType})` : 'NO ACTIVE PROVIDER'],
     ['Model', provider?.model || '—'],
+    ['Provider connection', status.provider?.status || '—'],
+    [
+      'Current AI request',
+      status.inFlight
+        ? `${request.trigger || 'turn'} #${request.id} · ${request.step} · ${seconds(request.elapsedMs)}`
+        : 'none',
+    ],
+    [
+      'Queue length',
+      `${queue.length || 0} / ${queue.max || 0}${
+        queue.items && queue.items.length ? ` · ${queue.items.map((item) => item.trigger).join(', ')}` : ''
+      }`,
+    ],
+    ['Last AI success', status.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleTimeString() : '—'],
+    ['Last AI response', last ? `${last.text} (${new Date(last.ts).toLocaleTimeString()})` : '—'],
+    ['Last spoken line', speech.lastSpokenText ? `${speech.lastSpokenText} (${sinceSpoken})` : '—'],
+    ['TTS status', ttsLabel()],
+    ['Time since spoken', sinceSpoken],
+    [
+      'Last AI error',
+      status.lastError
+        ? `${status.lastError}${status.lastErrorAt ? ` (${new Date(status.lastErrorAt).toLocaleTimeString()})` : ''}`
+        : '—',
+    ],
+    [
+      'Last watchdog recovery',
+      watchdog.last
+        ? `${watchdog.last.reason} — ${watchdog.last.detail} (${new Date(watchdog.last.ts).toLocaleTimeString()})`
+        : 'none',
+    ],
+    [
+      'Autonomous conversation',
+      autonomous.enabled
+        ? `ON · next in ${seconds(autonomous.nextInMs)} · ${autonomous.runs || 0} started`
+        : 'OFF',
+    ],
     ['Conversation', `${status.counters.replies} replies · ${status.counters.requests} requests · ${status.counters.filtered} filtered`],
+    ['Retries / empty turns', `${status.counters.retries} retries · ${status.counters.emptyTurns} unusable answers`],
+    ['Speech', `${status.counters.spoken} spoken · ${speech.skipped || 0} skipped · ${status.counters.recoveries} watchdog recoveries`],
     ['Cooldown', `${status.settings.cooldownSec}s · ${status.settings.frequency} frequency`],
-    ['Last reply', last ? `${last.text} (${new Date(last.ts).toLocaleTimeString()})` : '—'],
-    ['Last error', status.lastError ? `${status.lastError}${status.lastErrorAt ? ` (${new Date(status.lastErrorAt).toLocaleTimeString()})` : ''}` : '—'],
+    ['Session', status.session?.id || '—'],
   ];
+  const badLabels = new Set(['AI provider', 'Last AI error']);
   target.innerHTML = rows
-    .map(
-      ([label, value]) =>
-        `<div class="cell ${label === 'AI provider' && !provider ? 'bad' : label === 'AI mascot' && status.enabled ? 'ok' : ''}"><span>${escapeHtml(
-          label
-        )}</span><b>${escapeHtml(value)}</b></div>`
-    )
+    .map(([label, value]) => {
+      let cls = '';
+      if (label === 'Status') cls = ['SPEAKING', 'GENERATING', 'THINKING'].includes(value) ? 'ok' : ['ERROR', 'RECOVERING'].includes(value) ? 'bad' : '';
+      else if (label === 'Provider connection') cls = value === 'OK' ? 'ok' : value === 'ERROR' || value === 'NO PROVIDER' ? 'bad' : '';
+      else if (label === 'TTS status') cls = value.startsWith('SPEAKING') || value.startsWith('READY') ? 'ok' : value.startsWith('NO SPEECH') || value.startsWith('ERROR') ? 'bad' : '';
+      else if (badLabels.has(label)) cls = /^NO ACTIVE PROVIDER$/.test(value) || (label === 'Last AI error' && value !== '—') ? 'bad' : '';
+      return `<div class="cell ${cls}"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
+    })
     .join('');
 }
 

@@ -101,7 +101,15 @@ export const GAME_DEFAULTS = {
   aiChatResponses: true,
   aiGameCommentary: true,
   aiGiftReactions: true,
-  aiRandomConversation: false,
+  // Always-active host mode: Zappy keeps the conversation going on its own and
+  // never accepts an empty AI turn as a finished reply.
+  aiAlwaysActive: true,
+  aiAutonomous: true,
+  aiWatchdog: true,
+  aiMinIdleSec: 20,
+  aiMaxIdleSec: 35,
+  aiTimeoutSec: 20,
+  aiMaxRetries: 1,
   aiFrequency: 'normal', // low | normal | high
   aiCooldownSec: 8,
   aiMaxChars: 180,

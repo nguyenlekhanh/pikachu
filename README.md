@@ -98,7 +98,13 @@ The board shows **coordinate headers** on stream: `A, B, C…` above the columns
 left of the rows. They are generated from the live board size, so a 6×6, 6×8, 8×8 or 10×10
 board always labels exactly the tiles the server parses.
 
-Above the board, a **gift legend** shows the real gift icons from `assets/gift_icon/` with the action
+Directly under the LEVEL stats and directly above the board, a large **HOW TO PLAY** banner shows
+`MATCH TWO TILES!` with a huge `A1 B1` example, the explanation that the first position is the
+first tile and the second the second tile, and `FIRST CORRECT MATCH WINS POINTS!`. It is DOM text
+in the 1080×1920 design space, so it stays sharp on stream and never covers a tile. The footer
+keeps only the extra commands (`TOP HELP ME RANK HINT JOIN`).
+
+Below the board, a **gift legend** shows the real gift icons from `assets/gift_icon/` with the action
 each configured tier triggers and its coin range. It is built from Admin → Gift settings, so
 disabling a tier or changing its range updates the legend on the next state push.
 
@@ -161,9 +167,12 @@ sessionStorage only; the overlay never receives it).
   each one with a real chat request, keep exactly one active, and import OpenRouter from `.env`.
   Keys are encrypted at rest and never returned to the browser. See
   **[docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md)**.
-- **AI Mascot:** Zappy answers real TikTok chat through the active AI provider, with chat/game/gift/
-  random-conversation toggles, conversation frequency, response cooldown, max length, temperature,
-  voice settings and a **TEST AI RESPONSE** button that shows the provider's actual generated line.
+- **AI Mascot:** Zappy answers real TikTok chat through the active AI provider, with an
+  **ALWAYS ACTIVE AI HOST** mode (viewer chat, game commentary, autonomous topics, watchdog),
+  chat/game/gift/autonomous toggles, min/max idle interval, AI request timeout, maximum retries,
+  conversation frequency, response cooldown, max length, temperature, voice settings, a live
+  diagnostic panel (status, provider health, request, queue, last response/spoken line, TTS,
+  watchdog recovery) and a **TEST AI RESPONSE** button that shows the provider's actual line.
   See **[docs/AI_COHOST.md](docs/AI_COHOST.md)**.
 - **Game control:** start, pause, resume, restart, auto play on/off, reset leaderboard, stop game.
 - **Game settings:** board size mode/fixed size, difficulty, tile types, cooldown, auto-play idle
@@ -237,7 +246,7 @@ Details: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 ## 11. Tests and demo
 
 ```bash
-npm test        # 164 automated tests (matching, board, coordinates, engine, gifts, music queue/transport, session reset, AI providers/co-host, TikFinity parsing)
+npm test        # 193 automated tests (matching, board, coordinates, engine, gifts, music queue/transport, session reset, AI providers/co-host, always-active AI watchdog/queue/speech, instruction-banner layout, TikFinity parsing)
 npm run smoke   # 16 end-to-end checks against the running server (HTTP, auth, WS, move, score, gift, music)
 npm run demo    # pushes a realistic comment + gift sequence into the running server
 ```

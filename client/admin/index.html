@@ -288,10 +288,12 @@
             <h3>Conversation settings</h3>
             <form id="aiMascotForm" class="form-grid">
               <label class="checkbox"><input type="checkbox" name="aiMascotEnabled" /> AI mascot enabled</label>
-              <label class="checkbox"><input type="checkbox" name="aiChatResponses" /> Chat responses</label>
-              <label class="checkbox"><input type="checkbox" name="aiGameCommentary" /> Game event commentary</label>
+              <label class="checkbox"><input type="checkbox" name="aiAlwaysActive" /> Always active AI host</label>
+              <label class="checkbox"><input type="checkbox" name="aiChatResponses" /> Viewer chat responses</label>
+              <label class="checkbox"><input type="checkbox" name="aiGameCommentary" /> Game commentary</label>
               <label class="checkbox"><input type="checkbox" name="aiGiftReactions" /> Gift reactions</label>
-              <label class="checkbox"><input type="checkbox" name="aiRandomConversation" /> Random conversation</label>
+              <label class="checkbox"><input type="checkbox" name="aiAutonomous" /> Autonomous conversation</label>
+              <label class="checkbox"><input type="checkbox" name="aiWatchdog" /> AI watchdog</label>
               <label class="checkbox"><input type="checkbox" name="voiceEnabled" /> Voice enabled</label>
               <label>Conversation frequency
                 <select name="aiFrequency">
@@ -301,6 +303,10 @@
                 </select>
               </label>
               <label>Response cooldown (seconds) <input type="number" name="aiCooldownSec" min="3" max="180" step="1" /></label>
+              <label>Minimum idle interval (seconds) <input type="number" name="aiMinIdleSec" min="5" max="600" step="1" /></label>
+              <label>Maximum idle interval (seconds) <input type="number" name="aiMaxIdleSec" min="5" max="600" step="1" /></label>
+              <label>AI request timeout (seconds) <input type="number" name="aiTimeoutSec" min="5" max="90" step="1" /></label>
+              <label>Maximum retries <input type="number" name="aiMaxRetries" min="1" max="4" step="1" /></label>
               <label>Max response length <input type="number" name="aiMaxChars" min="60" max="400" step="10" /></label>
               <label>AI temperature <input type="number" name="aiTemperature" min="0" max="1.5" step="0.05" /></label>
               <label>Voice volume (0-1) <input type="number" name="voiceVolume" min="0" max="1" step="0.05" /></label>
@@ -311,7 +317,11 @@
               <span id="aiMascotNote" class="note"></span>
             </div>
             <div id="aiMascotTestResult" class="kv-block"></div>
-            <p class="note">Settings persist across restarts. Conversation memory is cleared by RESET GAME &amp; SESSION and is never stored permanently.</p>
+            <p class="note">
+              Settings persist across restarts. Conversation memory is cleared by RESET GAME &amp; SESSION and is never
+              stored permanently. With ALWAYS ACTIVE AI HOST on, an empty AI answer is retried instead of ending the
+              turn, and the watchdog releases any request, queue or speech that gets stuck.
+            </p>
           </div>
         </section>
 

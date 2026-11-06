@@ -322,6 +322,15 @@ export class Music {
     }, duration);
   }
 
+  /** Bring the bed back as soon as real speech finishes (or fails). */
+  restore() {
+    clearTimeout(this.duckTimer);
+    if (!this.ducked) return;
+    this.ducked = false;
+    if (!this.enabled) return;
+    this.fadeTo(this.targetVolume(), 700);
+  }
+
   fadeTo(target, ms = this.fadeMs) {
     if (!this.audio) return;
     clearInterval(this.fadeTimer);

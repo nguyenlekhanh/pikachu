@@ -1053,7 +1053,9 @@ export class GameEngine extends EventEmitter {
       aiChatResponses: this.settings.aiChatResponses !== false,
       aiGameCommentary: this.settings.aiGameCommentary !== false,
       aiGiftReactions: this.settings.aiGiftReactions !== false,
-      aiRandomConversation: this.settings.aiRandomConversation === true,
+      aiAlwaysActive: this.settings.aiAlwaysActive !== false,
+      aiAutonomous: this.settings.aiAutonomous !== false,
+      aiWatchdog: this.settings.aiWatchdog !== false,
     };
   }
 
@@ -1080,6 +1082,11 @@ export class GameEngine extends EventEmitter {
     if (patch.aiCooldownSec !== undefined) next.aiCooldownSec = numeric(patch.aiCooldownSec, next.aiCooldownSec, 3, 180);
     if (patch.aiMaxChars !== undefined) next.aiMaxChars = numeric(patch.aiMaxChars, next.aiMaxChars, 60, 400);
     if (patch.aiTemperature !== undefined) next.aiTemperature = numeric(patch.aiTemperature, next.aiTemperature, 0, 1.5);
+    if (patch.aiMinIdleSec !== undefined) next.aiMinIdleSec = numeric(patch.aiMinIdleSec, next.aiMinIdleSec, 5, 600);
+    if (patch.aiMaxIdleSec !== undefined) next.aiMaxIdleSec = numeric(patch.aiMaxIdleSec, next.aiMaxIdleSec, 5, 600);
+    if (patch.aiTimeoutSec !== undefined) next.aiTimeoutSec = numeric(patch.aiTimeoutSec, next.aiTimeoutSec, 5, 90);
+    if (patch.aiMaxRetries !== undefined)
+      next.aiMaxRetries = Math.round(numeric(patch.aiMaxRetries, next.aiMaxRetries, 1, 4));
     if (['low', 'normal', 'high'].includes(patch.speechFrequency)) next.speechFrequency = patch.speechFrequency;
     if (['low', 'normal', 'high'].includes(patch.aiFrequency)) next.aiFrequency = patch.aiFrequency;
     for (const key of [
@@ -1093,10 +1100,14 @@ export class GameEngine extends EventEmitter {
       'aiChatResponses',
       'aiGameCommentary',
       'aiGiftReactions',
-      'aiRandomConversation',
+      'aiAlwaysActive',
+      'aiAutonomous',
+      'aiWatchdog',
     ]) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }
+    // Pre-rename key: the autonomous conversation toggle replaced it.
+    delete next.aiRandomConversation;
     if (Array.isArray(patch.giftTiers)) next.giftTiers = patch.giftTiers;
     if (Array.isArray(patch.giftRules)) next.giftRules = patch.giftRules;
 

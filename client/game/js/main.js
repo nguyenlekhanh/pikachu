@@ -37,6 +37,37 @@ voice.speak = (text, options) => {
   return spoke;
 };
 
+// ------------------------------------------------------- real speech reports
+
+// The server cannot see the browser's speech engine, so the overlay reports
+// what actually happened. Without this, Admin could claim SPEAKING while the
+// page is silent.
+const reportTts = (state, info = {}) => {
+  // Only AI co-host lines carry a speech id; game/mascot callouts use the same
+  // browser voice and must not be counted as AI speech.
+  if (info.speechId === null || info.speechId === undefined) return;
+  net?.send('tts-state', {
+    state,
+    id: info.speechId,
+    text: info.text || '',
+    error: info.error || null,
+  });
+};
+
+voice.onStart = (info) => reportTts('start', info);
+voice.onEnd = (info) => {
+  reportTts('end', info);
+  music.restore();
+};
+voice.onError = (info) => {
+  reportTts('error', info);
+  music.restore();
+};
+voice.onVoices = (info) =>
+  net?.send('tts-state', { state: 'voices', available: info.available, count: info.count });
+mascot.onSpeechSkipped = (line) =>
+  net?.send('tts-state', { state: 'skipped', id: line.speechId, error: 'overlay-cooldown' });
+
 // ------------------------------------------------------------------ stage fit
 
 function fitStage() {
@@ -207,6 +238,8 @@ function handleMessage(type, payload) {
 function handleNetStatus(status) {
   if (status.connected) {
     reportTrack(true);
+    // Fresh connection: tell the server how many TTS voices this page has.
+    voice.reportVoices?.();
     return;
   }
   console.warn('[overlay] websocket disconnected, reconnecting...');

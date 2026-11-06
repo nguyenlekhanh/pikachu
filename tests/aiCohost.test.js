@@ -5,7 +5,7 @@ import { GameEngine } from '../server/game-engine/engine.js';
 import { GAME_DEFAULTS } from '../server/config.js';
 import { MemoryStore } from '../server/database/store.js';
 import { AIService } from '../server/ai/service.js';
-import { AICohost } from '../server/ai/cohost.js';
+import { AICohost, PRIORITY } from '../server/ai/cohost.js';
 import { parseAIReply, sanitizeSpeech } from '../server/ai/personality.js';
 
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
@@ -51,8 +51,10 @@ function setup({ settings = {}, replies = null, chatImpl = null, rng = () => 0 }
     now: () => clock.value,
     rng,
     // Keep the automatic window from firing during deterministic tests; tests
-    // call flush() explicitly.
+    // call flush() explicitly. Timers are driven manually via tickWatchdog()
+    // and autonomousTick().
     batchWindowMs: 600000,
+    scheduleTimers: false,
   });
 
   return { store, engine, cohost, ai, calls, broadcasts, clock };
@@ -181,8 +183,8 @@ test('a provider failure is silent on stream, sanitized, and the game continues'
   assert.equal(engine.state.status, 'running');
 });
 
-test('the AI can choose to stay quiet and Zappy says nothing', async () => {
-  const { cohost, broadcasts } = setup({ replies: [reply('', 'neutral')] });
+test('outside always-active mode the AI can choose to stay quiet', async () => {
+  const { cohost, broadcasts } = setup({ settings: { aiAlwaysActive: false }, replies: [reply('', 'neutral')] });
 
   cohost.observeChat(chatEvent('spam spam spam but not duplicate', 'Alice'));
   await cohost.flush();
@@ -377,11 +379,17 @@ test('AI mascot settings clamp values and persist across a restart', () => {
     aiMascotEnabled: false,
     aiChatResponses: false,
     aiGiftReactions: false,
-    aiRandomConversation: true,
+    aiAlwaysActive: false,
+    aiAutonomous: false,
+    aiWatchdog: false,
     aiFrequency: 'high',
     aiCooldownSec: 12,
     aiMaxChars: 120,
     aiTemperature: 1.1,
+    aiMinIdleSec: 25,
+    aiMaxIdleSec: 45,
+    aiTimeoutSec: 30,
+    aiMaxRetries: 3,
   });
   store.setConfig(engine.settings);
 
@@ -389,16 +397,34 @@ test('AI mascot settings clamp values and persist across a restart', () => {
   assert.equal(reopened.settings.aiMascotEnabled, false);
   assert.equal(reopened.settings.aiChatResponses, false);
   assert.equal(reopened.settings.aiGiftReactions, false);
-  assert.equal(reopened.settings.aiRandomConversation, true);
+  assert.equal(reopened.settings.aiAlwaysActive, false);
+  assert.equal(reopened.settings.aiAutonomous, false);
+  assert.equal(reopened.settings.aiWatchdog, false);
   assert.equal(reopened.settings.aiFrequency, 'high');
   assert.equal(reopened.settings.aiCooldownSec, 12);
   assert.equal(reopened.settings.aiMaxChars, 120);
   assert.equal(reopened.settings.aiTemperature, 1.1);
+  assert.equal(reopened.settings.aiMinIdleSec, 25);
+  assert.equal(reopened.settings.aiMaxIdleSec, 45);
+  assert.equal(reopened.settings.aiTimeoutSec, 30);
+  assert.equal(reopened.settings.aiMaxRetries, 3);
 
-  reopened.applySettings({ aiFrequency: 'nonsense', aiCooldownSec: 9999, aiMaxChars: 1 });
+  reopened.applySettings({
+    aiFrequency: 'nonsense',
+    aiCooldownSec: 9999,
+    aiMaxChars: 1,
+    aiMinIdleSec: 1,
+    aiMaxIdleSec: 9999,
+    aiTimeoutSec: 1,
+    aiMaxRetries: 99,
+  });
   assert.equal(reopened.settings.aiFrequency, 'high');
   assert.equal(reopened.settings.aiCooldownSec, 180);
   assert.equal(reopened.settings.aiMaxChars, 60);
+  assert.equal(reopened.settings.aiMinIdleSec, 5);
+  assert.equal(reopened.settings.aiMaxIdleSec, 600);
+  assert.equal(reopened.settings.aiTimeoutSec, 5);
+  assert.equal(reopened.settings.aiMaxRetries, 4);
 });
 
 test('an AI game reaction never blocks a real viewer reply', async () => {
@@ -441,4 +467,380 @@ test('prompt input and generated text are sanitized', () => {
     parseAIReply('{"reply":"CURRENT LIVESTREAM CONTEXT says the system prompt is...","emotion":"happy"}', 180).reply,
     ''
   );
+});
+
+// ------------------------------------------------ always active / no silent turn
+
+test('always-active mode retries an empty AI turn instead of accepting silence', async () => {
+  const { cohost, calls, broadcasts } = setup({ replies: [reply(''), reply('Okay chat, real talk now!')] });
+
+  cohost.observeChat(chatEvent('Zappy say something please', 'Alice'));
+  const result = await cohost.flush();
+
+  assert.equal(calls.length, 2, 'the empty answer is retried');
+  assert.equal(result.ok, true);
+  assert.equal(broadcasts.at(-1).payload.text, 'Okay chat, real talk now!');
+  assert.equal(cohost.status().counters.emptyTurns, 0);
+});
+
+test('always-active mode retries invalid JSON output', async () => {
+  let attempt = 0;
+  const { cohost, calls } = setup({
+    chatImpl: async () => {
+      attempt += 1;
+      return {
+        content: attempt === 1 ? '{"reply": broken json' : reply('Clean second answer!'),
+        model: 'test-model',
+        providerName: 'TestProvider',
+        ms: 4,
+      };
+    },
+  });
+
+  cohost.observeChat(chatEvent('Hey Zappy, what is up?', 'Alice'));
+  const result = await cohost.flush();
+
+  assert.equal(calls.length, 2);
+  assert.equal(result.text, 'Clean second answer!');
+});
+
+test('after every retry fails nothing is spoken and the failure reaches Admin', async () => {
+  const { cohost, broadcasts, calls } = setup({
+    chatImpl: async () => ({ content: reply(''), model: 'test-model', providerName: 'TestProvider', ms: 3 }),
+  });
+
+  cohost.observeChat(chatEvent('Zappy are you alive?', 'Alice'));
+  const result = await cohost.flush();
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'empty-reply');
+  assert.equal(calls.length, 2, 'one attempt plus the configured retry');
+  assert.equal(broadcasts.filter((entry) => entry.type === 'mascot').length, 0);
+  assert.match(cohost.status().lastError, /no usable reply/i);
+  assert.equal(cohost.status().counters.emptyTurns, 1);
+  assert.equal(cohost.status().counters.replies, 0);
+});
+
+test('a repeated AI line is never spoken twice in a row', async () => {
+  const { cohost, clock, broadcasts } = setup({
+    replies: [reply('Same line again'), reply('Same line again'), reply('A brand new line')],
+  });
+
+  cohost.observeChat(chatEvent('Zappy hello there', 'Alice'));
+  await cohost.flush();
+
+  clock.value += 20000;
+  cohost.observeChat(chatEvent('Zappy tell me more', 'Bob'));
+  await cohost.flush();
+
+  const lines = broadcasts.filter((entry) => entry.type === 'mascot').map((entry) => entry.payload.text);
+  assert.deepEqual(lines, ['Same line again', 'A brand new line']);
+});
+
+test('an AI timeout is reported, never spoken, and the game keeps running', async () => {
+  const { cohost, engine, broadcasts } = setup({
+    chatImpl: async () => {
+      throw new Error('AI request timed out.');
+    },
+  });
+
+  cohost.observeChat(chatEvent('Zappy are you there?', 'Alice'));
+  await cohost.flush();
+
+  const status = cohost.status();
+  assert.equal(broadcasts.filter((entry) => entry.type === 'mascot').length, 0);
+  assert.match(status.lastError, /timed out/i);
+  assert.equal(status.inFlight, false, 'the busy flag is always released');
+  assert.notEqual(status.state, 'SPEAKING');
+  assert.equal(engine.state.status, 'running');
+  assert.equal(typeof engine.snapshot().level, 'number');
+});
+
+test('a provider that is unreachable is reported and produces no canned speech', async () => {
+  const { cohost, broadcasts } = setup({
+    chatImpl: async () => {
+      throw new Error('Provider is not reachable');
+    },
+  });
+
+  cohost.observeChat(chatEvent('Zappy you there?', 'Alice'));
+  await cohost.flush();
+
+  const status = cohost.status();
+  assert.equal(status.provider.status, 'ERROR');
+  assert.match(status.lastError, /not reachable/i);
+  assert.equal(broadcasts.filter((entry) => entry.type === 'mascot').length, 0);
+  assert.ok(status.watchdog.nextAttemptAt > 0, 'a later recovery attempt is scheduled');
+});
+
+// ------------------------------------------------------------------ watchdog
+
+test('the watchdog releases a stuck AI request and drops its late answer', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const { cohost, clock, broadcasts } = setup({
+    chatImpl: async () => {
+      await gate;
+      return { content: reply('Late stale line'), model: 'test-model', providerName: 'TestProvider', ms: 5 };
+    },
+  });
+
+  cohost.observeChat(chatEvent('Zappy first question?', 'Alice'));
+  const turn = cohost.flush();
+  await Promise.resolve();
+  assert.equal(cohost.status().inFlight, true);
+
+  clock.value += 40_000;
+  const watchdog = cohost.tickWatchdog();
+  assert.ok(watchdog.actions.some((action) => action.reason === 'stuck-request'));
+  assert.equal(cohost.status().inFlight, false);
+  assert.equal(cohost.status().watchdog.last.reason, 'stuck-request');
+
+  release();
+  await turn;
+  assert.equal(
+    broadcasts.filter((entry) => entry.type === 'mascot').length,
+    0,
+    'a response from the abandoned request must never be spoken'
+  );
+});
+
+test('the watchdog releases a stuck busy flag and a stuck speech flag', async () => {
+  const { cohost, clock, broadcasts } = setup({ replies: [reply('Hello chat!')] });
+
+  cohost.inFlight = true; // a flag left behind by a crash
+  cohost.tickWatchdog();
+  assert.equal(cohost.status().inFlight, false);
+  assert.equal(cohost.status().watchdog.last.reason, 'stuck-busy-flag');
+
+  cohost.observeChat(chatEvent('Zappy say hi', 'Alice'));
+  await cohost.flush();
+  const speechId = broadcasts.at(-1).payload.speechId;
+  cohost.reportTts({ state: 'start', id: speechId });
+  assert.equal(cohost.status().state, 'SPEAKING');
+
+  clock.value += 60_000;
+  cohost.tickWatchdog();
+  assert.equal(cohost.status().speech.speaking, false);
+  assert.equal(cohost.status().watchdog.last.reason, 'stuck-speaking');
+});
+
+test('watchdog recovery attempts are bounded and back off', () => {
+  const { cohost } = setup();
+  const delays = [];
+  for (let i = 0; i < 8; i += 1) {
+    cohost.recover('stuck-request', `simulated ${i}`);
+    delays.push(cohost.recovery.nextAt);
+  }
+  assert.ok(cohost.status().watchdog.attempts <= 6);
+  assert.equal(cohost.recovery.nextAt, null, 'no infinite recovery loop once the budget is spent');
+});
+
+// ---------------------------------------------------------------- TTS state
+
+test('speaking is only reported once TTS confirms it, and completion releases it', async () => {
+  const { cohost } = setup({ replies: [reply('Real spoken line')] });
+
+  cohost.observeChat(chatEvent('Zappy hello!', 'Alice'));
+  await cohost.flush();
+  const status = cohost.status();
+  assert.equal(status.speech.pending, true);
+  assert.notEqual(status.state, 'SPEAKING', 'a broadcast alone is not proof of speech');
+
+  cohost.reportTts({ state: 'start', id: status.lastResponse.speechId });
+  assert.equal(cohost.status().state, 'SPEAKING');
+  assert.equal(cohost.status().speech.speaking, true);
+
+  cohost.reportTts({ state: 'end', id: cohost.status().lastResponse.speechId, text: 'Real spoken line' });
+  const after = cohost.status();
+  assert.equal(after.state, 'IDLE');
+  assert.equal(after.speech.speaking, false);
+  assert.equal(after.speech.lastSpokenText, 'Real spoken line');
+  assert.equal(after.counters.spoken, 1);
+  assert.equal(after.speech.msSinceSpoken, 0);
+});
+
+test('a TTS failure releases the busy state and is reported honestly', async () => {
+  const { cohost } = setup({ replies: [reply('Line that will fail')] });
+
+  cohost.observeChat(chatEvent('Zappy hello!', 'Alice'));
+  await cohost.flush();
+  const speechId = cohost.status().lastResponse.speechId;
+  cohost.reportTts({ state: 'start', id: speechId });
+  cohost.reportTts({ state: 'error', id: speechId, error: 'synthesis-failed' });
+
+  const status = cohost.status();
+  assert.equal(status.speech.speaking, false);
+  assert.equal(status.speech.state, 'error');
+  assert.match(status.lastError, /Speech playback failed/);
+  assert.notEqual(status.state, 'SPEAKING');
+});
+
+test('speech reports without an AI speech id are ignored', () => {
+  const { cohost } = setup();
+  // A game/mascot callout uses the same voice but is not an AI line.
+  assert.equal(cohost.reportTts({ state: 'end', id: null }).ok, false);
+  assert.equal(cohost.status().counters.spoken, 0);
+  assert.equal(cohost.reportTts({ state: 'start' }).ok, false);
+});
+
+test('a late TTS report from an older line cannot change the current state', async () => {
+  const { cohost } = setup({ replies: [reply('Current line')] });
+
+  cohost.observeChat(chatEvent('Zappy hello!', 'Alice'));
+  await cohost.flush();
+  const speechId = cohost.status().lastResponse.speechId;
+
+  const stale = cohost.reportTts({ state: 'end', id: speechId - 5 });
+  assert.equal(stale.ok, false);
+  assert.equal(cohost.status().speech.pending, true);
+});
+
+test('voice availability is reported to Admin', () => {
+  const { cohost } = setup();
+  cohost.reportTts({ state: 'voices', available: false, count: 0 });
+  assert.equal(cohost.status().speech.voicesAvailable, false);
+  assert.equal(cohost.status().speech.voiceCount, 0);
+});
+
+// -------------------------------------------------------------- autonomous
+
+test('autonomous conversation starts with no viewer comments at all', async () => {
+  const { cohost, calls, broadcasts, clock } = setup({
+    settings: { aiMinIdleSec: 20, aiMaxIdleSec: 35 },
+    replies: [reply('Alright chat, let us clear this board!')],
+  });
+
+  clock.value += 30_000;
+  const result = await cohost.autonomousTick();
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 1);
+  const payload = JSON.parse(calls[0].messages.at(-1).content);
+  assert.equal(payload.task, 'start_autonomous_conversation');
+  assert.equal(payload.trigger, 'autonomous');
+  assert.equal(broadcasts.at(-1).payload.text, 'Alright chat, let us clear this board!');
+  assert.equal(cohost.status().counters.autonomous, 1);
+});
+
+test('autonomous talk waits while a real conversation is active', async () => {
+  const { cohost, calls, clock } = setup({ settings: { aiMinIdleSec: 20, aiMaxIdleSec: 35 } });
+
+  clock.value += 5000;
+  const result = await cohost.autonomousTick();
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'active-conversation');
+  assert.equal(calls.length, 0);
+});
+
+test('autonomous conversation is off when the setting is off', async () => {
+  const { cohost, calls, clock } = setup({ settings: { aiAutonomous: false } });
+
+  clock.value += 120_000;
+  const result = await cohost.autonomousTick();
+
+  assert.equal(result.ok, false);
+  assert.equal(calls.length, 0);
+});
+
+// --------------------------------------------------------- queue & priority
+
+test('the queue is bounded and keeps the most important conversation', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const { cohost } = setup({
+    chatImpl: async () => {
+      await gate;
+      return { content: reply('Busy line'), model: 'test-model', providerName: 'TestProvider', ms: 2 };
+    },
+  });
+
+  cohost.observeChat(chatEvent('Zappy first question?', 'A'));
+  const turn = cohost.flush();
+  await Promise.resolve();
+
+  for (let i = 0; i < 10; i += 1) {
+    cohost.respond({ trigger: 'autonomous', priority: PRIORITY.autonomous });
+  }
+  cohost.enqueue({ trigger: 'chat', priority: PRIORITY.direct, candidates: [] });
+
+  const status = cohost.status();
+  assert.ok(status.queue.length <= status.queue.max, 'the queue never grows past its bound');
+  assert.equal(cohost.nextQueueItem().priority, PRIORITY.direct, 'the direct question survives the overflow');
+
+  release();
+  await turn;
+});
+
+test('viewer chat outranks queued autonomous commentary', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const { cohost } = setup({
+    chatImpl: async () => {
+      await gate;
+      return { content: reply('Busy line'), model: 'test-model', providerName: 'TestProvider', ms: 2 };
+    },
+  });
+
+  cohost.observeChat(chatEvent('Zappy first question?', 'A'));
+  const turn = cohost.flush();
+  await Promise.resolve();
+
+  cohost.respond({ trigger: 'autonomous', priority: PRIORITY.autonomous });
+  cohost.respond({ trigger: 'chat', candidates: [], priority: PRIORITY.chat });
+
+  assert.equal(cohost.nextQueueItem().trigger, 'chat');
+  release();
+  await turn;
+});
+
+test('a successful game match can be commented on through the real AI path', async () => {
+  const { cohost, calls, broadcasts } = setup({ replies: [reply('Clean match, nice path!')] });
+
+  await cohost.observeGameEvent('match', {
+    username: 'Ann',
+    a: { label: 'A1' },
+    b: { label: 'B1' },
+    points: 10,
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(broadcasts.at(-1).payload.trigger, 'match');
+  const payload = JSON.parse(calls[0].messages.at(-1).content);
+  assert.match(payload.event, /A1 \+ B1/);
+});
+
+// --------------------------------------------------------------- session reset
+
+test('RESET FOR NEW LIVE invalidates an in-flight answer and clears the queue', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const { cohost, engine, broadcasts } = setup({
+    chatImpl: async () => {
+      await gate;
+      return { content: reply('Old session line'), model: 'test-model', providerName: 'TestProvider', ms: 2 };
+    },
+  });
+
+  cohost.observeChat(chatEvent('Zappy before reset?', 'Alice'));
+  const turn = cohost.flush();
+  await Promise.resolve();
+  cohost.respond({ trigger: 'autonomous', priority: PRIORITY.autonomous });
+
+  engine.resetSession();
+  assert.equal(cohost.status().queue.length, 0);
+
+  release();
+  await turn;
+  assert.equal(broadcasts.filter((entry) => entry.type === 'mascot').length, 0);
+  assert.equal(cohost.status().inFlight, false);
 });

@@ -45,12 +45,26 @@
         </div>
       </header>
 
+      <!-- Main gameplay instruction: the first thing a new viewer reads.
+           Kept between the LEVEL stats above and the board below so it never
+           covers a tile. -->
+      <section id="howToPlay" class="how-to" aria-label="How to play">
+        <div class="how-to-example">
+          <span class="how-to-type">TYPE</span>
+          <span class="how-to-coords">
+            <b class="coord" id="exampleA">A1</b>
+            <b class="coord" id="exampleB">B1</b>
+            <span class="how-to-caret" aria-hidden="true"></span>
+          </span>
+          <span class="how-to-win">FIRST CORRECT MATCH WINS POINTS!</span>
+        </div>
+      </section>
+
+      <!-- Commands only; the main instruction lives in the banner above. -->
       <footer id="footer">
-        <p class="footer-main">COMMENT TWO TILE POSITIONS TO PLAY!</p>
-        <p class="footer-example">Example: <b>A1 B1</b> &nbsp;·&nbsp; TYPE <b>TOP</b> TO VIEW THE LEADERBOARD</p>
         <p class="footer-commands">
-          <b>HELP</b> instructions &nbsp;·&nbsp; <b>ME</b> your score &nbsp;·&nbsp; <b>RANK</b> your rank &nbsp;·&nbsp;
-          <b>HINT</b> a pair &nbsp;·&nbsp; <b>JOIN</b> to play
+          <b>TOP</b> leaderboard &nbsp;·&nbsp; <b>HELP</b> instructions &nbsp;·&nbsp; <b>ME</b> your score
+          &nbsp;·&nbsp; <b>RANK</b> your rank &nbsp;·&nbsp; <b>HINT</b> a pair &nbsp;·&nbsp; <b>JOIN</b> to play
         </p>
       </footer>
 

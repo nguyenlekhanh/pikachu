@@ -44,7 +44,7 @@ export function sanitizeSpeech(value, maxChars = 180) {
   return text;
 }
 
-export function buildSystemPrompt({ context = {}, maxChars = 180, recentReplies = [] } = {}) {
+export function buildSystemPrompt({ context = {}, maxChars = 180, recentReplies = [], alwaysActive = false } = {}) {
   const avoid = (recentReplies || [])
     .slice(-4)
     .map((line) => `- "${cleanText(line, 160)}"`)
@@ -66,7 +66,9 @@ export function buildSystemPrompt({ context = {}, maxChars = 180, recentReplies 
     '- Keep everything suitable for a general TikTok LIVE audience: friendly, clean, no politics, no adult content, no harassment.',
     '- Do not mention being an AI, a model, a prompt, or which provider you run on.',
     '- Do not use emoji, markdown, hashtags, stage directions, URLs or sound-effect spellings; your text is spoken aloud by TTS.',
-    '- If a message is spam, a game command, low value, or not worth answering, choose to stay quiet.',
+    alwaysActive
+      ? '- ALWAYS ACTIVE HOST MODE: an empty reply is not allowed. Every turn must produce one short, natural, entertaining line, even when the chat is quiet. When nobody is talking, start a fresh topic, make an observation about the actual game, or ask the viewers a fun question. Never repeat a recent topic or line.'
+      : '- If a message is spam, a game command, low value, or not worth answering, choose to stay quiet.',
     '',
     `Maximum reply length: ${Math.max(60, Math.min(400, Number(maxChars) || 180))} characters.`,
     avoid ? `Do not repeat these recent lines:\n${avoid}` : '',
@@ -83,8 +85,15 @@ export function buildSystemPrompt({ context = {}, maxChars = 180, recentReplies 
 }
 
 export function buildUserPayload({ trigger = 'chat', messages = [], event = null } = {}) {
+  const autonomous = trigger === 'autonomous' || trigger === 'random';
+  const task =
+    trigger === 'test'
+      ? 'generate_one_real_test_line'
+      : autonomous
+      ? 'start_autonomous_conversation'
+      : 'decide_and_reply_to_live_chat';
   return JSON.stringify({
-    task: trigger === 'test' ? 'generate_one_real_test_line' : 'decide_and_reply_to_live_chat',
+    task,
     trigger,
     viewers: (messages || []).slice(0, 4).map((message) => ({
       name: cleanText(message.username, 24) || 'viewer',
@@ -94,8 +103,8 @@ export function buildUserPayload({ trigger = 'chat', messages = [], event = null
     instruction:
       trigger === 'test'
         ? 'Generate one short, natural co-host line that fits the current game context. This is a real test request.'
-        : trigger === 'random'
-        ? 'The chat has been quiet. If a short playful line would fit, say it; otherwise stay quiet.'
+        : autonomous
+        ? 'The LIVE has been quiet. Start a fresh, natural conversation: make an observation about the actual game, ask the viewers a fun question, or share a playful thought. Do not repeat a recent line or topic, do not invent scores, gifts or viewers, and do not return an empty reply.'
         : trigger === 'chat'
         ? 'Decide whether one of these viewer messages deserves a spoken reply. Prefer messages aimed at you, real questions, jokes, or game talk. Stay quiet for spam or low-value messages.'
         : 'React to this game event only if it would genuinely entertain the chat. Stay quiet if it is minor.',
