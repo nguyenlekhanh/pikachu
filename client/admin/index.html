@@ -316,6 +316,14 @@
               <button id="testAiMascot">TEST AI RESPONSE</button>
               <span id="aiMascotNote" class="note"></span>
             </div>
+            <div class="row inline-form">
+              <input id="aiTopicInput" maxlength="160" placeholder="Tell Zappy what to talk about (optional)" />
+              <button id="makeZappyTalk">MAKE ZAPPY TALK</button>
+            </div>
+            <p class="note">
+              MAKE ZAPPY TALK asks the active provider for one brand-new line and speaks it on stream. Works even with
+              autonomous conversation off; it never interrupts a line that is already being spoken.
+            </p>
             <div id="aiMascotTestResult" class="kv-block"></div>
             <p class="note">
               Settings persist across restarts. Conversation memory is cleared by RESET GAME &amp; SESSION and is never

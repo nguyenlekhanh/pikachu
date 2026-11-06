@@ -315,6 +315,98 @@ $('#testAiMascot').addEventListener('click', async () => {
   }
 });
 
+// ------------------------------------------------- MAKE ZAPPY TALK (manual)
+
+/**
+ * Follow the real speech state until this exact line is confirmed spoken.
+ * Generation success alone is not playback success.
+ */
+async function waitForSpeech(text, spokenBaseline, skippedBaseline, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  let sawSpeaking = false;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    let status;
+    try {
+      status = await api('/api/admin/ai');
+    } catch {
+      continue;
+    }
+    const speech = status.speech || {};
+    if (speech.speaking) sawSpeaking = true;
+    if (speech.lastSpokenText === text && (speech.lastSpokenAt || 0) > (spokenBaseline || 0)) {
+      return { ok: true, message: 'SUCCESS — the overlay finished speaking the line.' };
+    }
+    if (speech.voicesAvailable === false) {
+      return { ok: false, message: 'NO SPEECH VOICES in the overlay browser — the line was shown as text only.' };
+    }
+    if (speech.state === 'error' && (speech.errorAt || 0) >= (spokenBaseline || 0)) {
+      return { ok: false, message: `SPEECH FAILED — ${speech.error || 'the browser could not play it'}` };
+    }
+    if ((speech.skipped || 0) > (skippedBaseline || 0)) {
+      return { ok: false, message: 'The overlay skipped playback (voice cooldown), so nothing was heard.' };
+    }
+    if (sawSpeaking && !speech.speaking && !speech.pending) {
+      return { ok: true, message: 'SUCCESS — speech finished.' };
+    }
+  }
+  return { ok: false, message: 'No speech confirmation from the overlay. Is an overlay page open in Chrome/Edge?' };
+}
+
+$('#makeZappyTalk').addEventListener('click', async () => {
+  const button = $('#makeZappyTalk');
+  const note = $('#aiMascotNote');
+  const target = $('#aiMascotTestResult');
+  const input = $('#aiTopicInput');
+  const topic = input.value.trim();
+  const cohost = state.overview?.aiCohost;
+  const spokenBaseline = cohost?.speech?.lastSpokenAt || 0;
+  const skippedBaseline = cohost?.speech?.skipped || 0;
+
+  button.disabled = true;
+  note.textContent = 'GENERATING — asking the active provider…';
+  note.className = 'note';
+  target.innerHTML = '';
+  try {
+    const result = await api('/api/admin/ai/say', { method: 'POST', body: { topic } });
+    if (!result.ok) {
+      note.textContent = result.error || 'Zappy could not generate a line.';
+      note.className = 'note bad';
+      return;
+    }
+    const rows = [
+      ['Generated line', result.text],
+      ['Topic', result.topic ? `streamer: ${result.topic}` : 'AI chose it from the LIVE context'],
+      ['Provider', result.provider || '—'],
+      ['Model', result.model || '—'],
+      ['Response time', `${result.ms ?? 0} ms`],
+    ];
+    target.innerHTML = rows
+      .map(
+        ([label, value]) =>
+          `<div class="cell${label === 'Generated line' ? ' ok' : ''}"><span>${escapeHtml(label)}</span><b>${escapeHtml(
+            value
+          )}</b></div>`
+      )
+      .join('');
+    note.textContent = 'GENERATED — waiting for the overlay to speak…';
+    note.className = 'note';
+
+    const outcome = await waitForSpeech(result.text, spokenBaseline, skippedBaseline);
+    note.textContent = outcome.message;
+    note.className = outcome.ok ? 'note ok' : 'note bad';
+    target.innerHTML += `<div class="cell ${outcome.ok ? 'ok' : 'bad'}"><span>Playback</span><b>${escapeHtml(
+      outcome.message
+    )}</b></div>`;
+    await refresh();
+  } catch (error) {
+    note.textContent = error.message;
+    note.className = 'note bad';
+  } finally {
+    button.disabled = false;
+  }
+});
+
 // -------------------------------------------------------------------- gifts
 
 function buildGiftDraft(settings) {

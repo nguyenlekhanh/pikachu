@@ -336,6 +336,23 @@ export function createApiRouter({
     }
   });
 
+  // Admin → MAKE ZAPPY TALK. One real line from the active provider, spoken
+  // through the overlay. Never canned, never a different provider.
+  router.post('/admin/ai/say', async (req, res) => {
+    if (!cohost) return res.status(503).json({ ok: false, error: 'AI co-host is not configured.' });
+    try {
+      const result = await cohost.manualTalk({ topic: (req.body || {}).topic });
+      res.set('Cache-Control', 'no-store');
+      // Playback starts asynchronously in the overlay, so the result reports the
+      // generated line and its speech id; the dashboard then follows the real
+      // TTS state before it reports success.
+      res.json(result);
+    } catch (error) {
+      logger?.error?.('AI manual line failed:', error.message);
+      res.status(500).json({ ok: false, error: 'The manual Zappy request failed unexpectedly.' });
+    }
+  });
+
   router.post('/admin/providers/import-openrouter', (req, res) => {
     if (!requireAi(res)) return;
     const result = ai.importOpenRouter();

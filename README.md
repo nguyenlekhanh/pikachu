@@ -172,7 +172,9 @@ sessionStorage only; the overlay never receives it).
   chat/game/gift/autonomous toggles, min/max idle interval, AI request timeout, maximum retries,
   conversation frequency, response cooldown, max length, temperature, voice settings, a live
   diagnostic panel (status, provider health, request, queue, last response/spoken line, TTS,
-  watchdog recovery) and a **TEST AI RESPONSE** button that shows the provider's actual line.
+  watchdog recovery), a **TEST AI RESPONSE** button that shows the provider's actual line, and a
+  **MAKE ZAPPY TALK** button (with an optional topic) that generates and speaks one new line on
+  demand — even with autonomous conversation off.
   See **[docs/AI_COHOST.md](docs/AI_COHOST.md)**.
 - **Game control:** start, pause, resume, restart, auto play on/off, reset leaderboard, stop game.
 - **Game settings:** board size mode/fixed size, difficulty, tile types, cooldown, auto-play idle
@@ -279,8 +281,8 @@ AI providers: `GET/POST /api/admin/providers`, `PATCH/DELETE /api/admin/provider
 `POST /api/admin/providers/:id/activate`, `POST /api/admin/providers/import-openrouter`
 (secrets are never returned; see **[docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md)**).
 
-AI co-host: `GET /api/admin/ai`, `POST /api/admin/ai/test` (real request through the active
-provider; see **[docs/AI_COHOST.md](docs/AI_COHOST.md)**).
+AI co-host: `GET /api/admin/ai`, `POST /api/admin/ai/test`, `POST /api/admin/ai/say` (MAKE ZAPPY
+TALK — real request through the active provider; see **[docs/AI_COHOST.md](docs/AI_COHOST.md)**).
 
 ---
 

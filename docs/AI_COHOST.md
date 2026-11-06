@@ -136,6 +136,23 @@ reports for any other id are ignored, which is what makes recovery and session r
 - A line the overlay never played is reported as `skipped`, so the server does not wait for a
   completion that will never arrive.
 
+## Manual trigger (MAKE ZAPPY TALK)
+
+Admin → AI Mascot → **MAKE ZAPPY TALK** generates one brand-new line from the active provider and
+speaks it on stream through the normal mascot path: bubble, expression, TTS and music ducking.
+
+- The optional *Tell Zappy what to talk about* input is sent to the model as a **topic
+  suggestion** (never as instructions, and never directly to TTS). Empty means the model picks its
+  own topic from the real LIVE and game context.
+- It runs only when the mascot is enabled and an active provider exists, never interrupts a line
+  that is already being spoken, and refuses a second click while a request is in flight.
+- It uses the same JSON contract, parsing, sanitizing, retry and duplicate-rejection path as every
+  other turn: no canned dialogue and no shortcut around validation.
+- It works with **AUTONOMOUS CONVERSATION off** — it is an operator action, not a scheduler event.
+- The dashboard shows **GENERATING** while the provider works, **SPEAKING** only after the overlay
+  confirms playback started, **SUCCESS** after the utterance ends, and a specific error when
+  generation or playback fails (including a browser with no voices).
+
 ## Personality
 
 The persistent system prompt lives in `server/ai/personality.js`: cute, funny, energetic,
@@ -169,6 +186,7 @@ shown or spoken.
 |---|---|---|
 | GET | `/api/admin/ai` | co-host status: state, provider health, request/queue/speech/watchdog diagnostics, counters |
 | POST | `/api/admin/ai/test` | real request through the active provider, returns the generated line |
+| POST | `/api/admin/ai/say` | MAKE ZAPPY TALK: one real generated line broadcast to the overlay (`{ topic }` optional) |
 
 `GET /api/admin/overview` includes the same status under `aiCohost`. All require `x-admin-token`.
 

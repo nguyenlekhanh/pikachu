@@ -819,6 +819,134 @@ test('a successful game match can be commented on through the real AI path', asy
 
 // --------------------------------------------------------------- session reset
 
+// --------------------------------------------------------- manual trigger
+
+test('MAKE ZAPPY TALK generates a real line and broadcasts it to the overlay', async () => {
+  const { cohost, calls, broadcasts } = setup({ replies: [reply('Fresh off the press, chat!', 'excited')] });
+
+  const result = await cohost.manualTalk();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.text, 'Fresh off the press, chat!');
+  assert.equal(calls.length, 1, 'exactly one provider call');
+  const frame = broadcasts.find((entry) => entry.type === 'mascot');
+  assert.equal(frame.payload.kind, 'ai');
+  assert.equal(frame.payload.ai, true);
+  assert.equal(frame.payload.trigger, 'manual');
+  assert.equal(frame.payload.text, 'Fresh off the press, chat!');
+  assert.equal(frame.payload.emotion, 'excited');
+  assert.equal(frame.payload.speechId, result.speechId);
+  assert.equal(cohost.status().manual.active, false);
+});
+
+test('the optional topic reaches the AI provider and is never spoken directly', async () => {
+  const { cohost, calls } = setup({ replies: [reply('Talking pizza toppings, obviously!')] });
+
+  const result = await cohost.manualTalk({ topic: '  best pizza topping  ' });
+
+  assert.equal(result.ok, true);
+  const payload = JSON.parse(calls[0].messages.at(-1).content);
+  assert.equal(payload.task, 'generate_one_manual_line');
+  assert.equal(payload.trigger, 'manual');
+  assert.equal(payload.topic, 'best pizza topping');
+  assert.match(payload.instruction, /best pizza topping/);
+  assert.equal(result.text, 'Talking pizza toppings, obviously!');
+  assert.notEqual(result.text, payload.topic);
+});
+
+test('MAKE ZAPPY TALK works while autonomous conversation is disabled', async () => {
+  const { cohost, calls } = setup({ settings: { aiAutonomous: false }, replies: [reply('Manual line!')] });
+
+  const result = await cohost.manualTalk();
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 1);
+});
+
+test('a provider error on the manual trigger is reported and nothing is spoken', async () => {
+  const { cohost, broadcasts } = setup({
+    chatImpl: async () => {
+      throw new Error('HTTP 401: invalid key sk-manual-secret-1');
+    },
+  });
+
+  const result = await cohost.manualTalk();
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /HTTP 401/);
+  assert.ok(!result.error.includes('sk-manual-secret-1'));
+  assert.equal(broadcasts.filter((entry) => entry.type === 'mascot').length, 0);
+  assert.equal(cohost.status().manual.active, false);
+});
+
+test('an empty manual answer is retried, never replaced by canned dialogue', async () => {
+  const { cohost, calls, broadcasts } = setup({
+    chatImpl: async () => ({ content: reply(''), model: 'test-model', providerName: 'TestProvider', ms: 3 }),
+  });
+
+  const result = await cohost.manualTalk();
+
+  assert.equal(result.ok, false);
+  assert.equal(calls.length, 2, 'one attempt plus the configured retry');
+  assert.equal(broadcasts.filter((entry) => entry.type === 'mascot').length, 0);
+  assert.match(result.error, /no usable reply/i);
+});
+
+test('repeated clicks cannot create overlapping manual requests', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let count = 0;
+  const { cohost, calls, broadcasts } = setup({
+    chatImpl: async () => {
+      count += 1;
+      if (count === 1) await gate;
+      return { content: reply('Only once'), model: 'test-model', providerName: 'TestProvider', ms: 2 };
+    },
+  });
+
+  const first = cohost.manualTalk();
+  await Promise.resolve();
+  const second = await cohost.manualTalk();
+
+  assert.equal(second.ok, false);
+  assert.equal(second.reason, 'busy');
+  assert.equal(calls.length, 1, 'the second click never reaches the provider');
+
+  release();
+  const done = await first;
+  assert.equal(done.ok, true);
+  assert.equal(broadcasts.filter((entry) => entry.type === 'mascot').length, 1);
+});
+
+test('the manual trigger never interrupts speech that is already in progress', async () => {
+  const { cohost, calls } = setup({ replies: [reply('First line'), reply('Second line')] });
+
+  await cohost.manualTalk();
+  const busy = await cohost.manualTalk();
+
+  assert.equal(busy.ok, false);
+  assert.equal(busy.reason, 'speaking');
+  assert.equal(calls.length, 1);
+});
+
+test('manual speech is confirmed by the overlay before it counts as spoken', async () => {
+  const { cohost } = setup({ replies: [reply('Spoken manual line')] });
+
+  const result = await cohost.manualTalk();
+  assert.equal(cohost.status().speech.pending, true, 'a broadcast alone is not proof of speech');
+
+  cohost.reportTts({ state: 'start', id: result.speechId });
+  assert.equal(cohost.status().state, 'SPEAKING');
+
+  cohost.reportTts({ state: 'end', id: result.speechId, text: result.text });
+  const status = cohost.status();
+  assert.equal(status.speech.speaking, false);
+  assert.equal(status.speech.lastSpokenText, 'Spoken manual line');
+  assert.equal(status.counters.spoken, 1);
+});
+
 test('RESET FOR NEW LIVE invalidates an in-flight answer and clears the queue', async () => {
   let release;
   const gate = new Promise((resolve) => {
