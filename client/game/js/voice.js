@@ -85,7 +85,7 @@ export class Voice {
     return COOLDOWN[this.frequency] ?? COOLDOWN.normal;
   }
 
-  speak(text, { priority = 1, force = false, speechId = null } = {}) {
+  speak(text, { priority = 1, force = false, speechId = null, volume = 1, pitch = null, rate = null } = {}) {
     if (!this.supported) {
       this.onError?.({ error: 'unsupported', text, speechId });
       return false;
@@ -105,9 +105,12 @@ export class Voice {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'en-US';
       if (this.voice) utterance.voice = this.voice;
-      utterance.volume = this.volume;
-      utterance.rate = 1.02 + Math.random() * 0.12;
-      utterance.pitch = 1.04 + Math.random() * 0.18;
+      // Each mascot has its own volume and a distinct pitch, so the two hosts
+      // are recognisable by ear, while only one utterance ever plays at a time.
+      const gain = Math.min(1, Math.max(0, Number(volume)));
+      utterance.volume = Math.min(1, Math.max(0, this.volume * (Number.isFinite(gain) ? gain : 1)));
+      utterance.rate = Number.isFinite(Number(rate)) ? Number(rate) : 1.02 + Math.random() * 0.12;
+      utterance.pitch = Number.isFinite(Number(pitch)) ? Number(pitch) : 1.04 + Math.random() * 0.18;
       // A cancelled utterance fires its events after a newer line started; the
       // server matches speech ids, but skipping them keeps the log clean.
       utterance.onstart = () => this.onStart?.({ text, speechId });

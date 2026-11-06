@@ -996,7 +996,14 @@ function renderAiMascot(data) {
       }`,
     ],
     ['Last AI success', status.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleTimeString() : '—'],
-    ['Last AI response', last ? `${last.text} (${new Date(last.ts).toLocaleTimeString()})` : '—'],
+    [
+      'Last AI response',
+      last
+        ? `${last.speaker ? `${last.speaker === 'pip' ? 'Pip' : 'Zappy'}: ` : ''}${last.text} (${new Date(
+            last.ts
+          ).toLocaleTimeString()})`
+        : '—',
+    ],
     ['Last spoken line', speech.lastSpokenText ? `${speech.lastSpokenText} (${sinceSpoken})` : '—'],
     ['TTS status', ttsLabel()],
     ['Time since spoken', sinceSpoken],
@@ -1022,6 +1029,30 @@ function renderAiMascot(data) {
     ['Retries / empty turns', `${status.counters.retries} retries · ${status.counters.emptyTurns} unusable answers`],
     ['Speech', `${status.counters.spoken} spoken · ${speech.skipped || 0} skipped · ${status.counters.recoveries} watchdog recoveries`],
     ['Cooldown', `${status.settings.cooldownSec}s · ${status.settings.frequency} frequency`],
+    ...(status.mascots || []).map((mascot) => [
+      `Mascot · ${mascot.name}`,
+      `${mascot.state}${mascot.enabled ? '' : ' (off)'} · volume ${Math.round((mascot.volume ?? 0) * 100)}% · ${
+        mascot.lines || 0
+      } lines`,
+    ]),
+    [
+      'Host conversation',
+      !status.duo?.enabled
+        ? 'OFF — single host (TWO MASCOTS off)'
+        : status.duo.conversation
+        ? `ON · next in ${seconds(status.duo.nextTalkInMs)} · last speaker ${status.duo.lastSpeaker || '—'}`
+        : 'OFF — two mascots, no banter',
+    ],
+    [
+      'Viewer priority',
+      !status.duo?.viewerPriority
+        ? 'OFF — viewers wait behind the hosts'
+        : status.duo?.interaction?.active
+        ? `PAUSED — answering ${status.duo.interaction.viewer || 'a viewer'} since ${seconds(
+            Date.now() - (status.duo.interaction.startedAt || Date.now())
+          )}`
+        : 'ON — hosts pause for a viewer and resume after the reply',
+    ],
     ['Session', status.session?.id || '—'],
   ];
   const badLabels = new Set(['AI provider', 'Last AI error']);

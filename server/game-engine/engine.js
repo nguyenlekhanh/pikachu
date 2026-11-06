@@ -1056,6 +1056,11 @@ export class GameEngine extends EventEmitter {
       aiAlwaysActive: this.settings.aiAlwaysActive !== false,
       aiAutonomous: this.settings.aiAutonomous !== false,
       aiWatchdog: this.settings.aiWatchdog !== false,
+      aiTwoMascots: this.settings.aiTwoMascots !== false,
+      aiMascotConversation: this.settings.aiMascotConversation !== false,
+      aiMascotOneEnabled: this.settings.aiMascotOneEnabled !== false,
+      aiMascotTwoEnabled: this.settings.aiMascotTwoEnabled !== false,
+      aiViewerPriority: this.settings.aiViewerPriority !== false,
     };
   }
 
@@ -1087,6 +1092,10 @@ export class GameEngine extends EventEmitter {
     if (patch.aiTimeoutSec !== undefined) next.aiTimeoutSec = numeric(patch.aiTimeoutSec, next.aiTimeoutSec, 5, 90);
     if (patch.aiMaxRetries !== undefined)
       next.aiMaxRetries = Math.round(numeric(patch.aiMaxRetries, next.aiMaxRetries, 1, 4));
+    if (patch.aiMascotOneVolume !== undefined)
+      next.aiMascotOneVolume = numeric(patch.aiMascotOneVolume, next.aiMascotOneVolume, 0, 1);
+    if (patch.aiMascotTwoVolume !== undefined)
+      next.aiMascotTwoVolume = numeric(patch.aiMascotTwoVolume, next.aiMascotTwoVolume, 0, 1);
     if (['low', 'normal', 'high'].includes(patch.speechFrequency)) next.speechFrequency = patch.speechFrequency;
     if (['low', 'normal', 'high'].includes(patch.aiFrequency)) next.aiFrequency = patch.aiFrequency;
     for (const key of [
@@ -1103,6 +1112,11 @@ export class GameEngine extends EventEmitter {
       'aiAlwaysActive',
       'aiAutonomous',
       'aiWatchdog',
+      'aiTwoMascots',
+      'aiMascotConversation',
+      'aiViewerPriority',
+      'aiMascotOneEnabled',
+      'aiMascotTwoEnabled',
     ]) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }

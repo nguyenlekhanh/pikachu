@@ -288,6 +288,11 @@
             <h3>Conversation settings</h3>
             <form id="aiMascotForm" class="form-grid">
               <label class="checkbox"><input type="checkbox" name="aiMascotEnabled" /> AI mascot enabled</label>
+              <label class="checkbox"><input type="checkbox" name="aiTwoMascots" /> Two mascots (Zappy + Pip)</label>
+              <label class="checkbox"><input type="checkbox" name="aiMascotConversation" /> Mascot-to-mascot conversation</label>
+              <label class="checkbox"><input type="checkbox" name="aiViewerPriority" /> Viewer interaction priority</label>
+              <label class="checkbox"><input type="checkbox" name="aiMascotOneEnabled" /> Zappy enabled</label>
+              <label class="checkbox"><input type="checkbox" name="aiMascotTwoEnabled" /> Pip enabled</label>
               <label class="checkbox"><input type="checkbox" name="aiAlwaysActive" /> Always active AI host</label>
               <label class="checkbox"><input type="checkbox" name="aiChatResponses" /> Viewer chat responses</label>
               <label class="checkbox"><input type="checkbox" name="aiGameCommentary" /> Game commentary</label>
@@ -310,6 +315,8 @@
               <label>Max response length <input type="number" name="aiMaxChars" min="60" max="400" step="10" /></label>
               <label>AI temperature <input type="number" name="aiTemperature" min="0" max="1.5" step="0.05" /></label>
               <label>Voice volume (0-1) <input type="number" name="voiceVolume" min="0" max="1" step="0.05" /></label>
+              <label>Zappy volume (0-1) <input type="number" name="aiMascotOneVolume" min="0" max="1" step="0.05" /></label>
+              <label>Pip volume (0-1) <input type="number" name="aiMascotTwoVolume" min="0" max="1" step="0.05" /></label>
             </form>
             <div class="row buttons">
               <button id="saveAiMascot">SAVE</button>
@@ -322,7 +329,8 @@
             </div>
             <p class="note">
               MAKE ZAPPY TALK asks the active provider for one brand-new line and speaks it on stream. Works even with
-              autonomous conversation off; it never interrupts a line that is already being spoken.
+              autonomous conversation off; it never interrupts a line that is already being spoken. With TWO MASCOTS on,
+              Zappy and Pip share the same provider and take turns, and a real viewer always interrupts them.
             </p>
             <div id="aiMascotTestResult" class="kv-block"></div>
             <p class="note">

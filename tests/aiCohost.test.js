@@ -708,8 +708,9 @@ test('voice availability is reported to Admin', () => {
 // -------------------------------------------------------------- autonomous
 
 test('autonomous conversation starts with no viewer comments at all', async () => {
+  // Single-host mode: the two-mascot duo scheduler has its own tests.
   const { cohost, calls, broadcasts, clock } = setup({
-    settings: { aiMinIdleSec: 20, aiMaxIdleSec: 35 },
+    settings: { aiMinIdleSec: 20, aiMaxIdleSec: 35, aiTwoMascots: false },
     replies: [reply('Alright chat, let us clear this board!')],
   });
 
@@ -726,7 +727,9 @@ test('autonomous conversation starts with no viewer comments at all', async () =
 });
 
 test('autonomous talk waits while a real conversation is active', async () => {
-  const { cohost, calls, clock } = setup({ settings: { aiMinIdleSec: 20, aiMaxIdleSec: 35 } });
+  const { cohost, calls, clock } = setup({
+    settings: { aiMinIdleSec: 20, aiMaxIdleSec: 35, aiTwoMascots: false },
+  });
 
   clock.value += 5000;
   const result = await cohost.autonomousTick();

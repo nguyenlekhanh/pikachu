@@ -7,6 +7,7 @@
 import { BoardScene } from './boardScene.js';
 import { UI } from './ui.js';
 import { Mascot } from './mascot.js';
+import { mascotSize } from './flight.js';
 import { Voice } from './voice.js';
 import { Music } from './music.js';
 import { Net } from './net.js';
@@ -14,7 +15,47 @@ import { Net } from './net.js';
 const ui = new UI();
 const voice = new Voice();
 const music = new Music();
-const mascot = new Mascot({ layer: document.getElementById('mascotLayer'), voice });
+const mascotLayer = document.getElementById('mascotLayer');
+
+/** The board rectangle in 1080x1920 design coordinates (used for the rails). */
+function measureBoard() {
+  const stage = document.getElementById('stage');
+  const frame = document.getElementById('boardFrame');
+  if (!stage || !frame) return { x: 160, y: 470, w: 760, h: 698 };
+  const stageRect = stage.getBoundingClientRect();
+  const scale = stageRect.width / 1080 || 1;
+  const rect = frame.getBoundingClientRect();
+  return {
+    x: (rect.left - stageRect.left) / scale,
+    y: (rect.top - stageRect.top) / scale,
+    w: rect.width / scale,
+    h: rect.height / scale,
+  };
+}
+
+// Two characters, two independent rails: Zappy on the left, Pip on the right.
+// Neither rail can overlap the board, so no tile can ever be hidden.
+const mascots = {
+  zappy: new Mascot({
+    layer: mascotLayer,
+    voice,
+    character: 'zappy',
+    lane: 'left',
+    size: mascotSize(0.6),
+    boardRect: measureBoard(),
+  }),
+  pip: new Mascot({
+    layer: mascotLayer,
+    voice,
+    character: 'pip',
+    lane: 'right',
+    size: mascotSize(0.6),
+    boardRect: measureBoard(),
+  }),
+};
+const mascotList = [mascots.zappy, mascots.pip];
+let activeSpeaker = 'zappy';
+
 const boardScene = new BoardScene();
 
 let net = null;
@@ -28,6 +69,8 @@ let reportedTrackFile = '';
 window.__music = music;
 // Same for the board: `__board.layout` exposes the coordinate header geometry.
 window.__board = boardScene;
+// `__mascots.zappy.rect()` reports the exact rectangle each mascot covers.
+window.__mascots = mascots;
 
 // Zappy talks over the music: duck the bed while a line is being spoken.
 const speak = voice.speak.bind(voice);
@@ -58,6 +101,7 @@ voice.onStart = (info) => reportTts('start', info);
 voice.onEnd = (info) => {
   reportTts('end', info);
   music.restore();
+  mascots[activeSpeaker]?.onSpeechEnd();
 };
 voice.onError = (info) => {
   reportTts('error', info);
@@ -65,8 +109,10 @@ voice.onError = (info) => {
 };
 voice.onVoices = (info) =>
   net?.send('tts-state', { state: 'voices', available: info.available, count: info.count });
-mascot.onSpeechSkipped = (line) =>
-  net?.send('tts-state', { state: 'skipped', id: line.speechId, error: 'overlay-cooldown' });
+for (const mascot of mascotList) {
+  mascot.onSpeechSkipped = (line) =>
+    net?.send('tts-state', { state: 'skipped', id: line.speechId, error: 'overlay-cooldown' });
+}
 
 // ------------------------------------------------------------------ stage fit
 
@@ -76,6 +122,10 @@ function fitStage() {
   const scale = Math.min(width / 1080, height / 1920);
   const stage = document.getElementById('stage');
   stage.style.transform = `translate(${(width - 1080 * scale) / 2}px, ${(height - 1920 * scale) / 2}px) scale(${scale})`;
+  // The stage is scaled as one unit, so re-measuring keeps the rails correct on
+  // any 9:16 screen (and after a browser zoom or window resize).
+  const board = measureBoard();
+  for (const mascot of mascotList) mascot.setRail(board);
 }
 
 window.addEventListener('resize', fitStage);
@@ -100,10 +150,12 @@ if (window.Phaser) {
   phaserGame = new window.Phaser.Game({
     type: window.Phaser.AUTO,
     parent: 'boardBox',
-    width: 940,
-    height: 860,
+    // Matches #boardBox exactly: the mascot rails are created by making the
+    // board itself narrower, not by scaling it, so pointer coordinates stay 1:1.
+    width: 720,
+    height: 658,
     transparent: true,
-    scale: { mode: window.Phaser.Scale.NONE, width: 940, height: 860 },
+    scale: { mode: window.Phaser.Scale.NONE, width: 720, height: 658 },
     render: { antialias: true, roundPixels: false, powerPreference: 'high-performance' },
     audio: { noAudio: true },
     banner: false,
@@ -141,7 +193,12 @@ function applyBootstrap(data) {
   if (!data) return;
   settings = data.settings || {};
   ui.setSettings(settings);
-  mascot.setSettings(settings);
+  mascots.zappy.setSettings(settings, 'aiMascotOneEnabled');
+  // Pip only appears when TWO MASCOTS is on and its own toggle is on.
+  mascots.pip.setSettings(
+    { ...settings, aiMascotTwoEnabled: settings.aiMascotTwoEnabled !== false && settings.aiTwoMascots !== false },
+    'aiMascotTwoEnabled'
+  );
   voice.setSettings(settings);
   applyMusicSettings(settings);
   ui.setGiftLegend(data.giftLegend);
@@ -168,11 +225,18 @@ function onFx(fx) {
   }
   if (fx.kind === 'newLevel') {
     ui.levelBanner(`LEVEL ${fx.level}`);
-    mascot.setEmotion('celebrating');
+    mascots.zappy.setEmotion('celebrating');
+    mascots.pip.setEmotion('thinking');
   }
   if (fx.kind === 'levelComplete') ui.levelBanner('LEVEL CLEARED!');
-  if (fx.kind === 'clearAll' || fx.kind === 'clearHalf') mascot.setEmotion('surprised');
-  if (fx.kind === 'gameover') mascot.setEmotion('sad');
+  if (fx.kind === 'clearAll' || fx.kind === 'clearHalf') {
+    mascots.zappy.setEmotion('surprised');
+    mascots.pip.setEmotion('thinking');
+  }
+  if (fx.kind === 'gameover') {
+    mascots.zappy.setEmotion('sad');
+    mascots.pip.setEmotion('sad');
+  }
 }
 
 function handleMessage(type, payload) {
@@ -194,9 +258,16 @@ function handleMessage(type, payload) {
       boardScene.handleFx(payload);
       onFx(payload);
       break;
-    case 'mascot':
-      mascot.react(payload);
+    case 'mascot': {
+      // Speech owns exactly one mascot at a time: the speaker animates and gets
+      // its own bubble, the other one listens with a reaction face.
+      const speaker = payload?.speaker === 'pip' ? 'pip' : 'zappy';
+      const other = speaker === 'pip' ? 'zappy' : 'pip';
+      activeSpeaker = speaker;
+      mascots[speaker].react(payload);
+      if (mascots[other].enabled) mascots[other].listen(payload?.listenerEmotion || 'listening');
       break;
+    }
     case 'feed':
       ui.addFeed(payload);
       break;
@@ -225,8 +296,10 @@ function handleMessage(type, payload) {
       // state snapshot (sent right after) repaints the board and leaderboards.
       if (payload && payload.action === 'reset') {
         ui.clearSession();
-        mascot.hideBubble();
-        mascot.setEmotion('neutral');
+        for (const mascot of mascotList) {
+          mascot.hideBubble();
+          mascot.setEmotion('neutral');
+        }
         ui.toast('Fresh LIVE session started', 'ok');
       }
       break;
@@ -276,7 +349,7 @@ bootstrap();
 
 window.addEventListener('beforeunload', () => {
   net?.close();
-  mascot.stop();
+  for (const mascot of mascotList) mascot.stop();
   music.destroy();
   phaserGame?.destroy(true);
 });

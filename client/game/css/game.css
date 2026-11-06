@@ -326,9 +326,17 @@ body {
   line-height: 1;
 }
 
+.hidden {
+  display: none;
+}
+
+.v_hidden {
+  visibility: hidden;
+}
+
 .how-to-coords .coord {
   font-family: var(--font-display);
-  font-size: 60px;
+  font-size: 88px;
   font-weight: 900;
   letter-spacing: 2px;
   color: #fff;
@@ -369,12 +377,15 @@ body {
 
 /* -------------------------------------------------------------------- board */
 
+/* The board is 760x698 so a 160px rail exists on each side for the mascots.
+   The Phaser canvas is sized to match (no CSS transform), which keeps tile
+   clicks pixel-accurate. Nothing is ever drawn over a tile. */
 #boardFrame {
   position: absolute;
-  left: 50px;
-  top: 444px;
-  width: 980px;
-  height: 900px;
+  left: 160px;
+  top: 470px;
+  width: 760px;
+  height: 698px;
   border-radius: 34px;
   padding: 20px;
   background:
@@ -401,8 +412,8 @@ body {
 
 #boardBox {
   position: relative;
-  width: 940px;
-  height: 860px;
+  width: 720px;
+  height: 658px;
 }
 
 #boardBox canvas {
@@ -719,13 +730,17 @@ body {
   pointer-events: none;
 }
 
+/* 60% of the previous 240px sprite: small enough for a 160px rail. */
 .mascot {
   position: absolute;
-  width: 240px;
-  height: 240px;
+  width: 144px;
+  height: 144px;
   will-change: transform;
-  filter: drop-shadow(0 18px 26px rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.45));
+  transition: opacity 0.3s ease;
 }
+
+.mascot.mascot-disabled { display: none; }
 
 .mascot svg { width: 100%; height: 100%; overflow: visible; }
 
@@ -741,17 +756,32 @@ body {
   to { transform: rotate(-16deg) translateY(-5px); }
 }
 
-.mascot .zappy-body { animation: body-bob 2.4s ease-in-out infinite; transform-origin: 50% 60%; }
+.mascot .zappy-body,
+.mascot .pip-body { animation: body-bob 2.4s ease-in-out infinite; transform-origin: 50% 60%; }
 @keyframes body-bob {
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-4px) scale(1.015); }
 }
 
-.mascot.excited .zappy-body { animation-duration: 0.9s; }
-.mascot.celebrating .zappy-body { animation: spin-pop 0.7s ease-in-out infinite; }
-.mascot.sad .zappy-body { animation-duration: 4.5s; }
-.mascot.sleepy .zappy-body { animation-duration: 6s; }
+.mascot.excited .zappy-body,
+.mascot.excited .pip-body { animation-duration: 0.9s; }
+.mascot.celebrating .zappy-body,
+.mascot.celebrating .pip-body { animation: spin-pop 0.7s ease-in-out infinite; }
+.mascot.sad .zappy-body,
+.mascot.sad .pip-body { animation-duration: 4.5s; }
+.mascot.sleepy .zappy-body,
+.mascot.sleepy .pip-body { animation-duration: 6s; }
 .mascot.angry .zappy-body { animation: shake 0.32s linear infinite; }
+
+/* The speaking mascot bounces; the listener tilts towards the speaker. */
+.mascot.is-speaking .mascot-aura { opacity: 1; animation: aura 0.9s ease-in-out infinite; }
+.mascot.listening .mascot-aura { opacity: 0.5; }
+.mascot.listening svg { animation: listen-nod 1.8s ease-in-out infinite; }
+
+@keyframes listen-nod {
+  0%, 100% { transform: rotate(0deg); }
+  45% { transform: rotate(3.5deg); }
+}
 
 @keyframes spin-pop {
   0%, 100% { transform: rotate(-6deg) translateY(0) scale(1); }
@@ -780,40 +810,67 @@ body {
   50% { transform: scale(1.12); opacity: 0.8; }
 }
 
+/* Speech bubbles live in the free band below the board (1182-1348), one per
+   mascot side. They never sit on the board, the banner or the leaderboard. */
 .bubble {
   position: absolute;
-  max-width: 460px;
-  padding: 18px 26px;
-  border-radius: 26px;
+  top: 1182px;
+  width: 470px;
+  max-width: 470px;
+  max-height: 160px;
+  padding: 12px 20px 14px;
+  border-radius: 22px;
   background: #fffdf5;
   color: #17203a;
-  font-size: 27px;
+  font-size: 26px;
   font-weight: 700;
-  line-height: 1.28;
+  line-height: 1.22;
+  overflow: hidden;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
   border: 3px solid #ffd93d;
   opacity: 0;
-  transform: scale(0.85) translateY(10px);
+  transform: scale(0.88) translateY(10px);
   transition: opacity 0.22s ease, transform 0.22s ease;
   pointer-events: none;
   z-index: 20;
 }
 
+.bubble-left { left: 50px; }
+.bubble-right { right: 50px; border-color: #6fe3c4; }
+
 .bubble.show { opacity: 1; transform: scale(1) translateY(0); }
+
+.bubble-name {
+  display: block;
+  font-size: 19px;
+  letter-spacing: 2.4px;
+  font-weight: 900;
+  color: #b8860b;
+  text-transform: uppercase;
+}
+
+.bubble-right .bubble-name { color: #1f8f7a; }
+
+.bubble-text { display: block; }
 
 .bubble::after {
   content: '';
   position: absolute;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   background: #fffdf5;
   border-right: 3px solid #ffd93d;
   border-bottom: 3px solid #ffd93d;
-  transform: rotate(45deg);
 }
 
-.bubble.tail-left::after { left: 40px; bottom: -14px; }
-.bubble.tail-right::after { right: 40px; bottom: -14px; }
+.bubble-left::after { left: 46px; top: -11px; transform: rotate(225deg); }
+.bubble-right::after {
+  right: 46px;
+  top: -11px;
+  border-right-color: #6fe3c4;
+  border-bottom-color: #6fe3c4;
+  transform: rotate(225deg);
+}
 
 /* ------------------------------------------------------------------- toasts */
 

@@ -43,6 +43,26 @@ export const PRIORITY = {
   direct: 5,
 };
 
+export const MASCOT_IDS = ['zappy', 'pip'];
+
+/** The two on-screen hosts. Voice, rail and artwork differ; the AI is shared. */
+export const MASCOTS = {
+  zappy: {
+    id: 'zappy',
+    name: 'Zappy',
+    volumeKey: 'aiMascotOneVolume',
+    enabledKey: 'aiMascotOneEnabled',
+    defaultVolume: 0.9,
+  },
+  pip: {
+    id: 'pip',
+    name: 'Pip',
+    volumeKey: 'aiMascotTwoVolume',
+    enabledKey: 'aiMascotTwoEnabled',
+    defaultVolume: 0.8,
+  },
+};
+
 export const LIMITS = {
   maxQueue: 6,
   maxSpeechMs: 45000,
@@ -128,6 +148,8 @@ export class AICohost {
       chats: [],
       replies: [],
       turns: [],
+      // Bounded two-host transcript, used to keep the banter continuous.
+      exchange: [],
       lastUser: new Map(),
       seenTexts: new Map(),
     };
@@ -161,6 +183,14 @@ export class AICohost {
     this.autonomousTimer = null;
     // Admin → MAKE ZAPPY TALK: one operator-triggered line at a time.
     this.manual = { active: false, startedAt: null, id: null, topic: null, error: null };
+    // Two-host state. The first duo turn belongs to Pip so Zappy opens.
+    this.lastSpeaker = 'pip';
+    this.speakingSpeaker = null;
+    this.ttsTrigger = null;
+    this.mascotLines = { zappy: 0, pip: 0 };
+    this.mascotLastAt = { zappy: null, pip: null };
+    // Viewer interaction pauses the hosts' own conversation immediately.
+    this.interaction = { active: false, startedAt: null, endedAt: null, viewer: null, reason: null };
 
     this.tts = {
       state: 'idle', // idle | pending | speaking | error
@@ -248,6 +278,97 @@ export class AICohost {
 
   watchdogOn() {
     return this.settings.aiWatchdog !== false;
+  }
+
+  // ------------------------------------------------------------- two mascots
+
+  twoMascots() {
+    return this.settings.aiTwoMascots !== false;
+  }
+
+  /** Mascot-to-mascot banter needs both hosts and the conversation toggle. */
+  mascotConversation() {
+    return this.twoMascots() && this.settings.aiMascotConversation !== false;
+  }
+
+  viewerPriority() {
+    return this.settings.aiViewerPriority !== false;
+  }
+
+  mascotEnabled(id) {
+    const def = MASCOTS[id];
+    if (!def) return false;
+    if (id === 'pip' && !this.twoMascots()) return false;
+    return this.settings[def.enabledKey] !== false;
+  }
+
+  mascotVolume(id) {
+    const def = MASCOTS[id] || MASCOTS.zappy;
+    return clamp(this.settings[def.volumeKey], 0, 1, def.defaultVolume);
+  }
+
+  otherMascot(id) {
+    const other = id === 'pip' ? 'zappy' : 'pip';
+    if (this.mascotEnabled(other)) return other;
+    return this.mascotEnabled(id) ? id : 'zappy';
+  }
+
+  /** A viewer who writes "Pip" or "Zappy" gets that host, not the other one. */
+  mentionedMascot(candidates = []) {
+    for (const candidate of candidates) {
+      const text = String(candidate?.text || '');
+      if (/\bpip\b/i.test(text) && this.mascotEnabled('pip')) return 'pip';
+      if (/\bzappy\b|\bzap\b/i.test(text) && this.mascotEnabled('zappy')) return 'zappy';
+    }
+    return null;
+  }
+
+  /**
+   * Decide who speaks this line. The provider may choose, but two rules always
+   * hold: an addressed host answers, and the two hosts alternate in duo mode.
+   */
+  resolveSpeaker(parsed, { trigger = 'chat', candidates = [] } = {}) {
+    const requested = String(parsed?.speaker || '').toLowerCase();
+    if (!this.twoMascots()) return 'zappy';
+    const named = trigger === 'chat' ? this.mentionedMascot(candidates) : null;
+    if (named) return named;
+    // A provider may name a host, but the two hosts never speak twice in a row -
+    // not in duo mode, and not on an autonomous/recovery/commentary turn either.
+    if (
+      MASCOT_IDS.includes(requested) &&
+      requested !== this.lastSpeaker &&
+      this.mascotEnabled(requested)
+    ) {
+      return requested;
+    }
+    return this.otherMascot(this.lastSpeaker);
+  }
+
+  /** Pause the hosts' own conversation while a viewer is being answered. */
+  beginInteraction(viewer = null) {
+    if (!this.viewerPriority()) return { ok: false, reason: 'disabled' };
+    this.interaction.active = true;
+    this.interaction.startedAt = this.now();
+    this.interaction.viewer = viewer ? sanitizeViewerText(viewer, 24) || null : null;
+    // Mascot chatter stops immediately: drop queued autonomous turns and the
+    // scheduler so no second call can start behind the viewer's reply.
+    this.queue = this.queue.filter((item) => item.priority >= PRIORITY.chat);
+    clearTimeout(this.autonomousTimer);
+    this.autonomousTimer = null;
+    this.autonomousAt = null;
+    return { ok: true };
+  }
+
+  endInteraction(reason = 'done') {
+    if (!this.interaction.active) {
+      this.scheduleAutonomous();
+      return { ok: false, reason: 'not-active' };
+    }
+    this.interaction.active = false;
+    this.interaction.endedAt = this.now();
+    this.interaction.reason = reason;
+    this.scheduleAutonomous(this.talkDelay());
+    return { ok: true, reason };
   }
 
   frequency() {
@@ -354,6 +475,8 @@ export class AICohost {
     if (this.memory.chats.length > 20) this.memory.chats.shift();
 
     this.enqueueCandidate(candidate);
+    // A real viewer outranks the hosts' own conversation the moment they type.
+    this.beginInteraction(candidate.username);
     return { accepted: true, score: candidate.score };
   }
 
@@ -424,6 +547,9 @@ export class AICohost {
     if (trigger === 'chat' && this.settings.aiChatResponses === false) return { ok: false, reason: 'chat-disabled' };
     if ((trigger === 'autonomous' || trigger === 'random') && !this.autonomousOn()) {
       return { ok: false, reason: 'autonomous-disabled' };
+    }
+    if (trigger === 'duo' && !this.mascotConversation()) {
+      return { ok: false, reason: 'duo-disabled' };
     }
     if (['match', 'level', 'gameover'].includes(trigger) && this.settings.aiGameCommentary === false) {
       return { ok: false, reason: 'commentary-disabled' };
@@ -518,18 +644,33 @@ export class AICohost {
       startedAt: this.now(),
       epoch: this.epoch,
       step: 'thinking',
+      // Set as soon as the provider names a speaker; until then both hosts are
+      // simply listening to the request.
+      speaker: null,
     };
     this.activeRequest = request;
     this.inFlight = true;
     this.lastRequestAt = request.startedAt;
     this.counters.requests += 1;
 
+    const hintedSpeaker = trigger === 'chat' ? this.mentionedMascot(candidates) : null;
+    if (hintedSpeaker) request.speaker = hintedSpeaker;
+
     try {
-      const messages = this.buildMessages({ trigger, candidates, event });
-      const userPayload = buildUserPayload({ trigger, messages: candidates, event });
+      const messages = this.buildMessages({ trigger, candidates, event, speaker: hintedSpeaker });
+      const userPayload = buildUserPayload({
+        trigger,
+        messages: candidates,
+        event,
+        exchange: this.memory.exchange.slice(-6),
+        lastSpeaker: this.lastSpeaker,
+        speaker: hintedSpeaker,
+      });
       request.step = 'generating';
 
-      const result = await this.requestParsed(messages, { trigger });
+      // Two-host turns carry a little more JSON (speaker + line), and small
+      // local models truncate when the budget is tight.
+      const result = await this.requestParsed(messages, { trigger, maxTokens: trigger === 'duo' ? 800 : 500 });
       if (this.closed || request.epoch !== this.epoch) return { ok: false, reason: 'stale' };
 
       if (!result.parsed.reply) {
@@ -542,6 +683,8 @@ export class AICohost {
         this.logger?.warn?.(`AI co-host ${trigger}: ${message}`);
         this.store?.log?.({ category: 'ai', level: 'warn', message: `AI co-host ${trigger}: ${message}` });
         this.scheduleRecovery();
+        // A failed viewer reply must not leave the hosts muted forever.
+        if (trigger === 'chat' || trigger === 'manual') this.endInteraction('no-reply');
         return { ok: false, reason: 'empty-reply', attempts: result.attempts };
       }
 
@@ -557,6 +700,8 @@ export class AICohost {
       this.lastSuccessAt = this.now();
       this.recovery.attempts = 0;
       this.recovery.nextAt = null;
+      const speaker = this.resolveSpeaker(result.parsed, { trigger, candidates });
+      request.speaker = speaker;
       this.speak(
         text,
         {
@@ -569,12 +714,13 @@ export class AICohost {
         },
         trigger,
         userPayload,
-        { priority }
+        { priority, speaker, listenerEmotion: result.parsed.listenerEmotion }
       );
       return {
         ok: true,
         text,
         emotion: result.parsed.emotion,
+        speaker,
         provider: result.response?.providerName || null,
         model: result.response?.model || null,
         speechId: this.speakingId,
@@ -592,6 +738,7 @@ export class AICohost {
         message: `AI co-host ${trigger} request failed: ${message}`,
       });
       this.scheduleRecovery();
+      if (trigger === 'chat' || trigger === 'manual') this.endInteraction('error');
       return { ok: false, reason: 'error', error: message };
     } finally {
       if (this.activeRequest && this.activeRequest.id === request.id) {
@@ -630,7 +777,7 @@ export class AICohost {
    * Outside always-active mode a deliberate empty reply is respected, and only
    * a broken output contract (unparseable JSON) is retried once.
    */
-  async requestParsed(messages, { alwaysActive = this.alwaysActive() } = {}) {
+  async requestParsed(messages, { alwaysActive = this.alwaysActive(), maxTokens = 500 } = {}) {
     const maxAttempts = alwaysActive ? 1 + this.maxRetries() : 2;
     let attempts = 0;
     let retries = 0;
@@ -640,7 +787,7 @@ export class AICohost {
 
     while (attempts < maxAttempts) {
       attempts += 1;
-      response = await this.callWithRetry(conversation);
+      response = await this.callWithRetry(conversation, { maxTokens });
       parsed = parseAIReply(response?.content, this.maxChars());
 
       if (parsed.reply) {
@@ -676,11 +823,11 @@ export class AICohost {
     return this.memory.replies.slice(-LIMITS.historyLines).some((entry) => normalizeLine(entry.text) === key);
   }
 
-  async callWithRetry(messages) {
+  async callWithRetry(messages, { maxTokens = 500 } = {}) {
     let lastError = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return await this.requestCompletion(messages);
+        return await this.requestCompletion(messages, { maxTokens });
       } catch (error) {
         lastError = error;
         if (attempt === 0 && this.isTransient(error)) {
@@ -709,19 +856,32 @@ export class AICohost {
     );
   }
 
-  buildMessages({ trigger, candidates = [], event = null, topic = null }) {
+  buildMessages({ trigger, candidates = [], event = null, topic = null, speaker = null }) {
     const system = buildSystemPrompt({
       context: this.gameContext(),
       maxChars: this.maxChars(),
       recentReplies: this.memory.replies.slice(-4).map((entry) => entry.text),
       alwaysActive: this.alwaysActive(),
+      dual: this.twoMascots(),
+      viewerPriority: this.viewerPriority(),
     });
     const messages = [{ role: 'system', content: system }];
     for (const turn of this.memory.turns.slice(-4)) {
       messages.push({ role: 'user', content: turn.user });
       messages.push({ role: 'assistant', content: turn.reply });
     }
-    messages.push({ role: 'user', content: buildUserPayload({ trigger, messages: candidates, event, topic }) });
+    messages.push({
+      role: 'user',
+      content: buildUserPayload({
+        trigger,
+        messages: candidates,
+        event,
+        topic,
+        exchange: this.memory.exchange.slice(-6),
+        lastSpeaker: this.lastSpeaker,
+        speaker,
+      }),
+    });
     return messages;
   }
 
@@ -762,17 +922,23 @@ export class AICohost {
     return this.tts.state === 'speaking';
   }
 
-  speak(text, reply, trigger, userPayload, { priority = PRIORITY.chat } = {}) {
+  speak(text, reply, trigger, userPayload, { priority = PRIORITY.chat, speaker = null, listenerEmotion = null } = {}) {
     const ts = this.now();
     const speechId = ++this.speechSeq;
     this.lastReplyAt = ts;
     if (trigger === 'chat') this.lastChatReplyAt = ts;
     this.lastSpeechSentAt = ts;
+    // Exactly one mascot owns this line: its bubble, its face, its voice.
+    const speakerId = speaker === 'pip' && this.mascotEnabled('pip') ? 'pip' : 'zappy';
 
     const frame = {
       kind: 'ai',
       ai: true,
       trigger,
+      speaker: speakerId,
+      speakerName: MASCOTS[speakerId].name,
+      listenerEmotion: listenerEmotion || 'listening',
+      volume: this.mascotVolume(speakerId),
       text,
       emotion: reply.emotion || 'happy',
       priority: priority >= PRIORITY.direct ? 3 : 2,
@@ -782,6 +948,13 @@ export class AICohost {
 
     this.speaking = true;
     this.speakingId = speechId;
+    this.speakingSpeaker = speakerId;
+    this.ttsTrigger = trigger;
+    this.lastSpeaker = speakerId;
+    this.mascotLines[speakerId] += 1;
+    this.mascotLastAt[speakerId] = ts;
+    this.memory.exchange.push({ speaker: speakerId, text, ts });
+    if (this.memory.exchange.length > 8) this.memory.exchange.shift();
     this.tts.state = 'pending';
     this.tts.activeId = speechId;
     this.tts.text = text;
@@ -808,6 +981,8 @@ export class AICohost {
     }
     this.lastResponse = {
       text,
+      speaker: speakerId,
+      speakerName: MASCOTS[speakerId].name,
       emotion: frame.emotion,
       trigger,
       speechId,
@@ -858,13 +1033,17 @@ export class AICohost {
 
     if (state === 'end') {
       const text = this.tts.text;
+      const trigger = this.ttsTrigger;
       this.speaking = false;
       this.speakingId = null;
+      this.speakingSpeaker = null;
       this.tts.state = 'idle';
       this.tts.activeId = null;
       this.tts.lastSpokenAt = now;
       this.tts.lastSpokenText = text;
       this.counters.spoken += 1;
+      // The viewer has been answered: the hosts pick their own chat back up.
+      if (trigger === 'chat' || trigger === 'manual') this.endInteraction('speech-end');
       this.drainQueue();
       return { ok: true };
     }
@@ -887,6 +1066,9 @@ export class AICohost {
         this.counters.errors += 1;
         this.store?.log?.({ category: 'ai', level: 'warn', message: `Speech playback failed: ${reason}` });
       }
+      // Speech errors must never leave the conversation paused.
+      if (this.interaction.active) this.endInteraction('speech-error');
+      this.speakingSpeaker = null;
       this.drainQueue();
       return { ok: true };
     }
@@ -938,7 +1120,13 @@ export class AICohost {
       actions.push({ ok: true, reason: 'queue-resumed' });
     }
 
-    // 5) A scheduled recovery attempt that is due.
+    // 5) A viewer interaction that never ended (overlay closed mid-reply).
+    if (this.interaction.active && now - (this.interaction.startedAt || 0) > 60000) {
+      this.endInteraction('timeout');
+      actions.push({ ok: true, reason: 'viewer-interaction-timeout' });
+    }
+
+    // 6) A scheduled recovery attempt that is due.
     if (this.recovery.nextAt && now >= this.recovery.nextAt) {
       this.recovery.nextAt = null;
       this.runRecoveryAttempt();
@@ -1003,7 +1191,12 @@ export class AICohost {
       return;
     }
     if (!this.alwaysActive() || !this.autonomousOn()) return;
-    this.respond({ trigger: 'autonomous', priority: PRIORITY.autonomous }).catch(() => {});
+    // A recovery turn must keep the same mode, otherwise the hosts stop
+    // answering each other after the first provider hiccup.
+    this.respond({
+      trigger: this.mascotConversation() ? 'duo' : 'autonomous',
+      priority: PRIORITY.autonomous,
+    }).catch(() => {});
   }
 
   // ------------------------------------------------------------- autonomous
@@ -1014,13 +1207,25 @@ export class AICohost {
     return Math.round(min + this.rng() * Math.max(0, max - min));
   }
 
+  /**
+   * Pacing for the two hosts' own conversation: quicker than a quiet-room
+   * monologue, still bounded so it never spams the provider.
+   */
+  talkDelay() {
+    if (!this.mascotConversation()) return this.autonomousDelay();
+    const factor = this.frequency().cooldownFactor;
+    const min = Math.max(6000, Math.round(9000 * factor));
+    const max = Math.max(min + 3000, Math.round(16000 * factor));
+    return Math.round(min + this.rng() * (max - min));
+  }
+
   scheduleAutonomous(waitMs = null) {
     clearTimeout(this.autonomousTimer);
     this.autonomousTimer = null;
     this.autonomousAt = null;
     if (!this.scheduleTimers) return;
     if (this.closed || !this.enabled() || !this.alwaysActive() || !this.autonomousOn()) return;
-    const wait = Math.max(1000, Number(waitMs) || this.autonomousDelay());
+    const wait = Math.max(1000, Number(waitMs) || this.talkDelay());
     this.autonomousAt = this.now() + wait;
     this.autonomousTimer = unref(setTimeout(() => this.autonomousTick(), wait));
   }
@@ -1038,22 +1243,33 @@ export class AICohost {
       this.scheduleAutonomous(Math.round(this.minIdleMs() / 2));
       return { ok: false, reason: 'busy' };
     }
+    // Viewer interaction has the highest priority: the hosts wait their turn.
+    if (this.interaction.active) {
+      this.scheduleAutonomous(2500);
+      return { ok: false, reason: 'viewer-priority' };
+    }
     if (this.queue.length || this.pending) {
-      this.scheduleAutonomous(this.autonomousDelay());
+      this.scheduleAutonomous(this.talkDelay());
       return { ok: false, reason: 'queue' };
     }
 
-    const lastActivity = Math.max(this.lastChatAt, this.lastReplyAt, this.tts.lastSpokenAt || 0);
-    const quietFor = now - lastActivity;
-    const minIdle = this.minIdleMs();
-    if (quietFor < minIdle) {
-      this.scheduleAutonomous(minIdle - quietFor + 500);
-      return { ok: false, reason: 'active-conversation' };
+    const duo = this.mascotConversation();
+    if (!duo) {
+      const lastActivity = Math.max(this.lastChatAt, this.lastReplyAt, this.tts.lastSpokenAt || 0);
+      const quietFor = now - lastActivity;
+      const minIdle = this.minIdleMs();
+      if (quietFor < minIdle) {
+        this.scheduleAutonomous(minIdle - quietFor + 500);
+        return { ok: false, reason: 'active-conversation' };
+      }
     }
 
-    const result = await this.respond({ trigger: 'autonomous', priority: PRIORITY.autonomous });
+    const result = await this.respond({
+      trigger: duo ? 'duo' : 'autonomous',
+      priority: PRIORITY.autonomous,
+    });
     if (result.ok) this.counters.autonomous += 1;
-    this.scheduleAutonomous(this.autonomousDelay());
+    this.scheduleAutonomous(this.talkDelay());
     return result;
   }
 
@@ -1238,6 +1454,11 @@ export class AICohost {
     this.memory.chats = [];
     this.memory.replies = [];
     this.memory.turns = [];
+    this.memory.exchange = [];
+    this.lastSpeaker = 'pip';
+    this.speakingSpeaker = null;
+    this.ttsTrigger = null;
+    this.interaction = { active: false, startedAt: null, endedAt: null, viewer: null, reason: null };
     this.memory.lastUser.clear();
     this.memory.seenTexts.clear();
     this.pending = null;
@@ -1341,6 +1562,33 @@ export class AICohost {
     return 'UNTESTED';
   }
 
+  /**
+   * Per-mascot state for Admin: IDLE / THINKING / LISTENING / SPEAKING / FLYING.
+   * Derived from the real AI/TTS phases, never invented by the overlay.
+   */
+  mascotStates() {
+    return MASCOT_IDS.map((id) => {
+      const def = MASCOTS[id];
+      const enabled = this.enabled() && this.mascotEnabled(id);
+      let state = 'IDLE';
+      if (!this.enabled()) state = 'IDLE';
+      else if (!this.mascotEnabled(id)) state = 'OFF';
+      else if (this.isSpeaking()) state = this.speakingSpeaker === id ? 'SPEAKING' : 'LISTENING';
+      else if (this.inFlight) state = this.activeRequest?.speaker === id ? 'THINKING' : 'LISTENING';
+      else if (this.interaction.active) state = 'LISTENING';
+      else state = 'FLYING';
+      return {
+        id,
+        name: def.name,
+        enabled,
+        state,
+        volume: this.mascotVolume(id),
+        lines: this.mascotLines[id] || 0,
+        lastLineAt: this.mascotLastAt[id] || null,
+      };
+    });
+  }
+
   /** Honest state: SPEAKING only once the overlay confirmed real speech. */
   stateLabel() {
     if (this.closed || !this.enabled()) return 'IDLE';
@@ -1434,6 +1682,16 @@ export class AICohost {
         id: this.manual.id,
         topic: this.manual.topic,
         error: this.manual.error,
+      },
+      mascots: this.mascotStates(),
+      duo: {
+        enabled: this.twoMascots(),
+        conversation: this.mascotConversation(),
+        viewerPriority: this.viewerPriority(),
+        lastSpeaker: this.lastSpeaker,
+        speakingSpeaker: this.speakingSpeaker,
+        interaction: { ...this.interaction },
+        nextTalkInMs: this.autonomousAt ? Math.max(0, this.autonomousAt - now) : null,
       },
       counters: { ...this.counters },
       memory: {

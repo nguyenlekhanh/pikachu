@@ -172,7 +172,8 @@ sessionStorage only; the overlay never receives it).
   chat/game/gift/autonomous toggles, min/max idle interval, AI request timeout, maximum retries,
   conversation frequency, response cooldown, max length, temperature, voice settings, a live
   diagnostic panel (status, provider health, request, queue, last response/spoken line, TTS,
-  watchdog recovery), a **TEST AI RESPONSE** button that shows the provider's actual line, and a
+  watchdog recovery), two mascots — **Zappy** (left rail) and **Pip** (right rail) — that talk to each
+  other with AI-generated banter, a **TEST AI RESPONSE** button that shows the provider's actual line, and a
   **MAKE ZAPPY TALK** button (with an optional topic) that generates and speaks one new line on
   demand — even with autonomous conversation off.
   See **[docs/AI_COHOST.md](docs/AI_COHOST.md)**.

@@ -136,6 +136,43 @@ reports for any other id are ignored, which is what makes recovery and session r
 - A line the overlay never played is reported as `skipped`, so the server does not wait for a
   completion that will never arrive.
 
+## Two mascots: Zappy and Pip
+
+The overlay hosts two different characters in the free rails beside the board:
+
+| | Zappy (left rail) | Pip (right rail) |
+| --- | --- | --- |
+| Artwork | original golden sky-spark, long ears, lightning tail | mint comet-owl, round glasses, star tail |
+| Voice | higher pitch, faster | lower pitch, drier |
+| Personality | hyper, sweet, easily amazed | deadpan, dry-witted, quietly competitive |
+| State | IDLE / THINKING / LISTENING / SPEAKING / FLYING | same |
+
+- Both mascots are 60% of the old sprite and only ever move inside their own
+  rail. The board is scaled to 77.5% at (160, 470) so a 160px rail exists on
+  each side; the rails are measured from the real DOM rectangle, so no mascot
+  can cover a tile, a coordinate, the banner, the legend or the leaderboard.
+- Speech bubbles live in the free band below the board, one per side, with the
+  speaker's name and colour. Only the speaking mascot animates; the other one
+  gets a LISTENING face.
+- One line is spoken at a time through the existing TTS. Each mascot has its own
+  volume and pitch; music ducking is unchanged.
+
+### Mascot-to-mascot conversation
+
+The active provider writes every line. `trigger: 'duo'` asks for one short line
+from one host, a `speaker` field and a `listenerEmotion`; the server forces the
+hosts to alternate and keeps a bounded transcript (last 6 lines) in the prompt so
+they answer each other. There is no dialogue list and no canned fallback: a
+provider failure is reported and retried on the normal schedule.
+
+### Viewer priority
+
+A real viewer comment pauses the hosts immediately: the scheduler is stopped, queued
+banter is dropped, and the addressed host ("Pip, ...") answers. When that line
+finishes speaking (or fails, or the watchdog times out after 60 s), the hosts'
+conversation resumes automatically. Game commands (`A1 B1`, `TOP`, `HINT`, `JOIN`, ...)
+are filtered before the AI and never start or interrupt a conversation.
+
 ## Manual trigger (MAKE ZAPPY TALK)
 
 Admin → AI Mascot → **MAKE ZAPPY TALK** generates one brand-new line from the active provider and
