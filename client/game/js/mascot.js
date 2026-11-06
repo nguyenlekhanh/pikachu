@@ -46,6 +46,12 @@ export class Mascot {
     this.layer.appendChild(this.bubble);
     this.bubbleText = this.bubble.querySelector('.bubble-text');
 
+    // Reaction layer for TikTok interactions (hearts, stars, sparkles, wave).
+    this.fxLayer = document.createElement('div');
+    this.fxLayer.className = 'mascot-fx-layer';
+    this.el.appendChild(this.fxLayer);
+    this.fxTimer = null;
+
     this.eyes = this.el.querySelector('.face-eyes');
     this.mouth = this.el.querySelector('.face-mouth');
     this.extra = this.el.querySelector('.face-extra');
@@ -117,6 +123,34 @@ export class Mascot {
     this.speaking = false;
     this.el.classList.remove('is-speaking');
     this.setEmotion(emotion, { hold: 0 });
+  }
+
+  /**
+   * TikTok reaction: a short animation on this mascot only. Likes, follows and
+   * shares are celebrated without spending an AI request, and the flight
+   * transform keeps running because the effect is applied to the body only.
+   */
+  playFx(action = 'hearts', { hold = 1800 } = {}) {
+    if (!this.enabled) return false;
+    const map = {
+      hearts: { emotion: 'happy', glyph: '♥' },
+      celebrate: { emotion: 'excited', glyph: '★' },
+      sparkles: { emotion: 'surprised', glyph: '✦' },
+      welcome: { emotion: 'happy', glyph: '👋' },
+    };
+    const key = map[action] ? action : 'hearts';
+    const fx = map[key];
+    this.setEmotion(fx.emotion, { hold });
+    this.el.classList.remove('fx-active', 'fx-hearts', 'fx-celebrate', 'fx-sparkles', 'fx-welcome');
+    // Force a reflow so the same reaction replays even when it fires twice fast.
+    void this.el.offsetWidth;
+    this.el.classList.add('fx-active', `fx-${key}`);
+    if (this.fxLayer) this.fxLayer.textContent = fx.glyph;
+    clearTimeout(this.fxTimer);
+    this.fxTimer = setTimeout(() => {
+      this.el.classList.remove('fx-active', 'fx-hearts', 'fx-celebrate', 'fx-sparkles', 'fx-welcome');
+    }, hold);
+    return true;
   }
 
   // ----------------------------------------------------------------- speech

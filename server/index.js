@@ -141,6 +141,8 @@ function ingest(event, origin = 'tikfinity') {
         engine.emit('feed', { kind: 'follow', username: event.username, text: `${event.username} followed!`, ts: Date.now() });
         engine.say('welcome', { priority: 1 });
         engine.emitLeaderboard();
+        // Real follower, real name: the hosts acknowledge them immediately.
+        aiCohost.observeFollow(event).catch(() => {});
         break;
       }
       case 'join': {
@@ -160,6 +162,9 @@ function ingest(event, origin = 'tikfinity') {
       }
       case 'like': {
         const now = Date.now();
+        // Every like is recorded; the co-host aggregates them into one window so
+        // a like storm never becomes one AI request per like.
+        aiCohost.observeLike(event);
         if (now - lastLikeFeedAt > 8000) {
           lastLikeFeedAt = now;
           engine.emit('feed', {
@@ -173,6 +178,7 @@ function ingest(event, origin = 'tikfinity') {
       }
       case 'share': {
         engine.emit('feed', { kind: 'share', username: event.username, text: `${event.username} shared the LIVE!`, ts: Date.now() });
+        aiCohost.observeShare(event).catch(() => {});
         break;
       }
       case 'viewers':

@@ -115,6 +115,15 @@ export const GAME_DEFAULTS = {
   aiMascotTwoEnabled: true,
   aiMascotOneVolume: 0.9,
   aiMascotTwoVolume: 0.8,
+  // TikTok interaction reactions. Likes are aggregated into a window, never
+  // sent to the AI one event at a time; milestones are announced once each.
+  aiLikeReactions: true,
+  aiFollowReactions: true,
+  aiShareReactions: true,
+  aiLikeMilestones: true,
+  aiLikeAggregateSec: 5,
+  aiLikeMinMilestone: 100,
+  aiEventFrequency: 'normal', // low | normal | high
   aiMinIdleSec: 20,
   aiMaxIdleSec: 35,
   aiTimeoutSec: 20,

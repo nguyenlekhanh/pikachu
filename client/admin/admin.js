@@ -10,7 +10,7 @@ const state = {
   token: sessionStorage.getItem('pk-admin-token') || '',
   overview: null,
   giftDraft: null,
-  dirty: { settings: false, mascot: false, music: false, gifts: false, aiMascot: false },
+  dirty: { settings: false, mascot: false, music: false, gifts: false, aiMascot: false, aiInteractions: false },
   pollTimer: null,
 };
 
@@ -128,6 +128,7 @@ function render() {
   renderMusic(data);
   renderProviders(data);
   if (!state.dirty.aiMascot) fillForm('#aiMascotForm', data.settings);
+  if (!state.dirty.aiInteractions) fillForm('#aiInteractionForm', data.settings);
   renderAiMascot(data);
   renderTikTok(data);
   renderLogs();
@@ -234,6 +235,7 @@ const FORM_DIRTY_KEY = {
   '#mascotForm': 'mascot',
   '#musicForm': 'music',
   '#aiMascotForm': 'aiMascot',
+  '#aiInteractionForm': 'aiInteractions',
 };
 Object.entries(FORM_DIRTY_KEY).forEach(([selector, key]) => {
   $(selector).addEventListener('input', () => {
@@ -269,6 +271,9 @@ $('#saveMusic').addEventListener('click', () =>
 );
 $('#saveAiMascot').addEventListener('click', () =>
   saveSettings(readForm('#aiMascotForm'), '#aiMascotNote', 'aiMascot')
+);
+$('#saveAiInteractions').addEventListener('click', () =>
+  saveSettings(readForm('#aiInteractionForm'), '#aiInteractionNote', 'aiInteractions')
 );
 
 $('#testAiMascot').addEventListener('click', async () => {
@@ -967,6 +972,10 @@ function renderAiMascot(data) {
   const autonomous = status.autonomous || {};
   const queue = status.queue || {};
   const request = status.request || {};
+  const interactions = status.interactions || {};
+  const likes = interactions.likes || {};
+  const follows = interactions.follows || {};
+  const shares = interactions.shares || {};
 
   const ttsLabel = () => {
     if (speech.state === 'speaking') return 'SPEAKING (confirmed by overlay)';
@@ -1052,6 +1061,32 @@ function renderAiMascot(data) {
             Date.now() - (status.duo.interaction.startedAt || Date.now())
           )}`
         : 'ON — hosts pause for a viewer and resume after the reply',
+    ],
+    [
+      'Likes',
+      !likes.reactionsOn
+        ? 'OFF — likes are not reacted to'
+        : `ON · ${likes.likes || 0} likes in ${likes.batches || 0} batches · ${likes.windowSec || 0}s window · ${
+            likes.likeTurns || 0
+          } spoken · ${likes.pending || 0} pending`,
+    ],
+    [
+      'Like milestones',
+      !likes.milestonesOn
+        ? 'OFF'
+        : `ON · minimum ${likes.minMilestoneSetting} · next ${likes.nextMilestone ?? '—'} · celebrated ${
+            (likes.celebrated || []).join(', ') || 'none'
+          }`,
+    ],
+    [
+      'Follows / shares',
+      `Follows ${follows.on ? 'ON' : 'OFF'} · ${follows.total || 0} seen · ${follows.turns || 0} welcomed · Shares ${
+        shares.on ? 'ON' : 'OFF'
+      } · ${shares.total || 0} seen · ${shares.turns || 0} thanked`,
+    ],
+    [
+      'Event reaction frequency',
+      `${interactions.eventFrequency || '—'} · ${Math.round((interactions.eventChance || 0) * 100)}% of non-milestone events`,
     ],
     ['Session', status.session?.id || '—'],
   ];

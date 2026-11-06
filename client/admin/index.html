@@ -339,6 +339,36 @@
               turn, and the watchdog releases any request, queue or speech that gets stuck.
             </p>
           </div>
+
+          <div class="card">
+            <h3>TikTok interactions</h3>
+            <form id="aiInteractionForm" class="form-grid">
+              <label class="checkbox"><input type="checkbox" name="aiLikeReactions" /> Like reactions</label>
+              <label class="checkbox"><input type="checkbox" name="aiFollowReactions" /> Follow reactions</label>
+              <label class="checkbox"><input type="checkbox" name="aiShareReactions" /> Share reactions</label>
+              <label class="checkbox"><input type="checkbox" name="aiLikeMilestones" /> Like milestones</label>
+              <label>Like aggregation window (seconds) <input type="number" name="aiLikeAggregateSec" min="2" max="120" step="1" /></label>
+              <label>Minimum like milestone <input type="number" name="aiLikeMinMilestone" min="10" max="100000" step="10" /></label>
+              <label>Event reaction frequency
+                <select name="aiEventFrequency">
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+            </form>
+            <div class="row buttons">
+              <button id="saveAiInteractions">SAVE INTERACTIONS</button>
+              <span id="aiInteractionNote" class="note"></span>
+            </div>
+            <p class="note">
+              Likes are aggregated over the window above, so a like storm never becomes one AI request per like: the
+              mascots always react with an animation, and only an occasional batch (or a milestone) is spoken. Milestones
+              are fixed points (100, 500, 1,000, 5,000, 10,000) and each one is celebrated once per LIVE. Follows are
+              welcomed immediately by name; shares get a short thank-you. Every name and number comes from the real
+              TikFinity event.
+            </p>
+          </div>
         </section>
 
         <!-- TIKTOK -->

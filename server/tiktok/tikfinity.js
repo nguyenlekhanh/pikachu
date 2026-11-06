@@ -17,6 +17,22 @@ import { giftDedupeKey } from '../gift-handler/gifts.js';
 
 const BACKOFF = [2000, 4000, 8000, 15000, 30000];
 
+/**
+ * Stable dedupe key for one delivered event. TikTok/TikFinity redelivers follows
+ * and shares after a reconnect, and a redelivered interaction must not become a
+ * second welcome or a second thank-you. Likes are deduplicated by the AI
+ * tracker instead, because the same viewer may legitimately like repeatedly.
+ */
+const interactionDedupeKey = (event) =>
+  `${event.kind}|${event.userId || event.username || ''}|${event.createTime || ''}`;
+
+const dedupeKeyFor = (event) => {
+  if (event.kind === 'chat') return chatDedupeKey(event);
+  if (event.kind === 'gift') return giftDedupeKey(event);
+  if (event.kind === 'follow' || event.kind === 'share') return interactionDedupeKey(event);
+  return null;
+};
+
 export class TikFinityAdapter extends EventEmitter {
   constructor({ url = 'ws://127.0.0.1:21213/', reconnect = true, logger = null } = {}) {
     super();
@@ -145,7 +161,7 @@ export class TikFinityAdapter extends EventEmitter {
         continue;
       }
 
-      const key = event.kind === 'chat' ? chatDedupeKey(event) : event.kind === 'gift' ? giftDedupeKey(event) : null;
+      const key = dedupeKeyFor(event);
       if (key) {
         const now = Date.now();
         const seenAt = this.seen.get(key);

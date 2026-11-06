@@ -173,7 +173,9 @@ sessionStorage only; the overlay never receives it).
   conversation frequency, response cooldown, max length, temperature, voice settings, a live
   diagnostic panel (status, provider health, request, queue, last response/spoken line, TTS,
   watchdog recovery), two mascots — **Zappy** (left rail) and **Pip** (right rail) — that talk to each
-  other with AI-generated banter, a **TEST AI RESPONSE** button that shows the provider's actual line, and a
+  other with AI-generated banter, **TikTok interaction reactions** (likes aggregated over a configurable
+  window, like milestones celebrated once each, new followers welcomed by name and shares thanked, with
+  comment > gift > follow > share > like > commentary > banter priority), a **TEST AI RESPONSE** button that shows the provider's actual line, and a
   **MAKE ZAPPY TALK** button (with an optional topic) that generates and speaks one new line on
   demand — even with autonomous conversation off.
   See **[docs/AI_COHOST.md](docs/AI_COHOST.md)**.

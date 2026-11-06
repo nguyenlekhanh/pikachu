@@ -1061,6 +1061,15 @@ export class GameEngine extends EventEmitter {
       aiMascotOneEnabled: this.settings.aiMascotOneEnabled !== false,
       aiMascotTwoEnabled: this.settings.aiMascotTwoEnabled !== false,
       aiViewerPriority: this.settings.aiViewerPriority !== false,
+      aiLikeReactions: this.settings.aiLikeReactions !== false,
+      aiFollowReactions: this.settings.aiFollowReactions !== false,
+      aiShareReactions: this.settings.aiShareReactions !== false,
+      aiLikeMilestones: this.settings.aiLikeMilestones !== false,
+      aiLikeAggregateSec: this.settings.aiLikeAggregateSec,
+      aiLikeMinMilestone: this.settings.aiLikeMinMilestone,
+      aiEventFrequency: this.settings.aiEventFrequency,
+      aiMascotOneVolume: this.settings.aiMascotOneVolume,
+      aiMascotTwoVolume: this.settings.aiMascotTwoVolume,
     };
   }
 
@@ -1096,8 +1105,13 @@ export class GameEngine extends EventEmitter {
       next.aiMascotOneVolume = numeric(patch.aiMascotOneVolume, next.aiMascotOneVolume, 0, 1);
     if (patch.aiMascotTwoVolume !== undefined)
       next.aiMascotTwoVolume = numeric(patch.aiMascotTwoVolume, next.aiMascotTwoVolume, 0, 1);
+    if (patch.aiLikeAggregateSec !== undefined)
+      next.aiLikeAggregateSec = numeric(patch.aiLikeAggregateSec, next.aiLikeAggregateSec, 2, 120);
+    if (patch.aiLikeMinMilestone !== undefined)
+      next.aiLikeMinMilestone = numeric(patch.aiLikeMinMilestone, next.aiLikeMinMilestone, 10, 100000);
     if (['low', 'normal', 'high'].includes(patch.speechFrequency)) next.speechFrequency = patch.speechFrequency;
     if (['low', 'normal', 'high'].includes(patch.aiFrequency)) next.aiFrequency = patch.aiFrequency;
+    if (['low', 'normal', 'high'].includes(patch.aiEventFrequency)) next.aiEventFrequency = patch.aiEventFrequency;
     for (const key of [
       'autoPlayEnabled',
       'mascotEnabled',
@@ -1117,6 +1131,10 @@ export class GameEngine extends EventEmitter {
       'aiViewerPriority',
       'aiMascotOneEnabled',
       'aiMascotTwoEnabled',
+      'aiLikeReactions',
+      'aiFollowReactions',
+      'aiShareReactions',
+      'aiLikeMilestones',
     ]) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }

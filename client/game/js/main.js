@@ -268,6 +268,15 @@ function handleMessage(type, payload) {
       if (mascots[other].enabled) mascots[other].listen(payload?.listenerEmotion || 'listening');
       break;
     }
+    case 'mascot-fx': {
+      // TikTok reactions (like, milestone, follow, share). Animation only: it
+      // never speaks and never moves a mascot out of its rail.
+      const target = payload?.target === 'left' ? ['zappy'] : payload?.target === 'right' ? ['pip'] : ['zappy', 'pip'];
+      for (const id of target) {
+        if (mascots[id]?.enabled) mascots[id].playFx(payload?.action || 'hearts');
+      }
+      break;
+    }
     case 'feed':
       ui.addFeed(payload);
       break;

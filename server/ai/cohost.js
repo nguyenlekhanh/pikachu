@@ -27,6 +27,7 @@ import {
   sanitizeSpeech,
   sanitizeViewerText,
 } from './personality.js';
+import { EVENT_FREQUENCY, InteractionTracker } from './interactions.js';
 
 const FREQUENCY = {
   low: { windowMs: 2400, cooldownFactor: 1.6, eventChance: 0.12, quietAfterMs: 240000 },
@@ -34,13 +35,21 @@ const FREQUENCY = {
   high: { windowMs: 800, cooldownFactor: 0.65, eventChance: 0.45, quietAfterMs: 90000 },
 };
 
-/** Conversation priority. Low numbers are dropped first when the queue is full. */
+/**
+ * Conversation priority. Low numbers are dropped first when the queue is full.
+ * This is the real event order from the brief: a comment aimed at a host wins,
+ * then gifts, new followers, shares and like milestones, then commentary, then
+ * the hosts' own banter.
+ */
 export const PRIORITY = {
   autonomous: 1,
   commentary: 2,
-  gift: 3,
-  chat: 4,
-  direct: 5,
+  like: 3,
+  share: 4,
+  follow: 5,
+  gift: 6,
+  chat: 7,
+  direct: 8,
 };
 
 export const MASCOT_IDS = ['zappy', 'pip'];
@@ -75,7 +84,25 @@ const WATCHDOG_INTERVAL_MS = 1000;
 const RECOVERY_BASE_MS = 8000;
 const RECOVERY_MAX_MS = 120000;
 const MAX_RECOVERY_ATTEMPTS = 6;
-const QUEUE_TTL_MS = { 1: 20000, 2: 25000, 3: 30000, 4: 45000, 5: 60000 };
+const QUEUE_TTL_MS = { 1: 20000, 2: 25000, 3: 35000, 4: 45000, 5: 60000, 6: 60000, 7: 60000, 8: 75000 };
+
+/** Triggers where a real viewer is waiting on the answer. */
+const VIEWER_TRIGGERS = ['chat', 'manual', 'follow', 'share', 'like'];
+
+/** Prompt-sized description of an aggregated like batch (real numbers only). */
+const describeLikes = (batch = {}, milestone = null) => {
+  const likes = Number(batch.count) || 0;
+  const people = Number(batch.uniqueUsers) || 0;
+  const windowSec = Math.max(1, Math.round((Number(batch.windowMs) || 5000) / 1000));
+  const names = (batch.users || []).slice(0, 3).join(', ');
+  const base =
+    `${likes} like${likes === 1 ? '' : 's'} from ${people || 1} viewer${people === 1 ? '' : 's'} ` +
+    `in the last ${windowSec} seconds. Total likes this LIVE: ${Number(batch.totalLikes) || 0}.` +
+    (names ? ` Recent likers: ${names}.` : '');
+  return milestone
+    ? `LIKE MILESTONE: the LIVE just passed ${milestone} total likes. ${base} Both hosts celebrate this one.`
+    : `New likes: ${base}`;
+};
 
 const clamp = (value, min, max, fallback) => {
   const parsed = Number(value);
@@ -191,6 +218,16 @@ export class AICohost {
     this.mascotLastAt = { zappy: null, pip: null };
     // Viewer interaction pauses the hosts' own conversation immediately.
     this.interaction = { active: false, startedAt: null, endedAt: null, viewer: null, reason: null };
+    // TikTok likes/follows/shares: likes are batched here, never per event.
+    this.interactions = new InteractionTracker({
+      now: this.now,
+      windowMs: this.likeWindowMs(),
+      minMilestone: this.minMilestone(),
+    });
+    this.likeTimer = null;
+    this.lastLikeReplyAt = 0;
+    this.lastFollow = null;
+    this.lastShare = null;
 
     this.tts = {
       state: 'idle', // idle | pending | speaking | error
@@ -231,6 +268,13 @@ export class AICohost {
       emptyTurns: 0,
       autonomous: 0,
       recoveries: 0,
+      likes: 0,
+      likeTurns: 0,
+      follows: 0,
+      followTurns: 0,
+      shares: 0,
+      shareTurns: 0,
+      milestones: 0,
     };
     this.closed = false;
 
@@ -295,6 +339,36 @@ export class AICohost {
     return this.settings.aiViewerPriority !== false;
   }
 
+  // ------------------------------------------------ TikTok interaction events
+
+  likeReactions() {
+    return this.settings.aiLikeReactions !== false;
+  }
+
+  followReactions() {
+    return this.settings.aiFollowReactions !== false;
+  }
+
+  shareReactions() {
+    return this.settings.aiShareReactions !== false;
+  }
+
+  likeMilestonesOn() {
+    return this.settings.aiLikeMilestones !== false;
+  }
+
+  likeWindowMs() {
+    return clamp(this.settings.aiLikeAggregateSec, 2, 120, 5) * 1000;
+  }
+
+  minMilestone() {
+    return Math.round(clamp(this.settings.aiLikeMinMilestone, 10, 100000, 100));
+  }
+
+  eventChance() {
+    return EVENT_FREQUENCY[this.settings.aiEventFrequency] ?? EVENT_FREQUENCY.normal;
+  }
+
   mascotEnabled(id) {
     const def = MASCOTS[id];
     if (!def) return false;
@@ -352,7 +426,8 @@ export class AICohost {
     this.interaction.viewer = viewer ? sanitizeViewerText(viewer, 24) || null : null;
     // Mascot chatter stops immediately: drop queued autonomous turns and the
     // scheduler so no second call can start behind the viewer's reply.
-    this.queue = this.queue.filter((item) => item.priority >= PRIORITY.chat);
+    // Keep a gift/follow/share (and the viewer's own chat) ahead of the banter.
+    this.queue = this.queue.filter((item) => item.priority >= PRIORITY.share);
     clearTimeout(this.autonomousTimer);
     this.autonomousTimer = null;
     this.autonomousAt = null;
@@ -369,6 +444,29 @@ export class AICohost {
     this.interaction.reason = reason;
     this.scheduleAutonomous(this.talkDelay());
     return { ok: true, reason };
+  }
+
+  isViewerTrigger(trigger) {
+    return VIEWER_TRIGGERS.includes(trigger);
+  }
+
+  /**
+   * Per-priority cooldown. A follow must be acknowledged right away, a share
+   * quickly, while ordinary commentary keeps the full configured cool-down.
+   */
+  cooldownFor(priority) {
+    const base = this.cooldownMs();
+    if (priority >= PRIORITY.direct) return Math.round(base * 0.5);
+    if (priority === PRIORITY.follow) return Math.min(2500, Math.round(base * 0.15));
+    if (priority === PRIORITY.share) return Math.min(5000, Math.round(base * 0.25));
+    if (priority === PRIORITY.like) return Math.round(base * 0.5);
+    return base;
+  }
+
+  listenerEmotionFor(trigger) {
+    if (trigger === 'like') return 'excited';
+    if (trigger === 'follow' || trigger === 'share') return 'happy';
+    return null;
   }
 
   frequency() {
@@ -532,6 +630,9 @@ export class AICohost {
   priorityFor(trigger, candidates = []) {
     if (trigger === 'chat') return candidates[0]?.direct ? PRIORITY.direct : PRIORITY.chat;
     if (trigger === 'gift') return PRIORITY.gift;
+    if (trigger === 'follow') return PRIORITY.follow;
+    if (trigger === 'share') return PRIORITY.share;
+    if (trigger === 'like') return PRIORITY.like;
     if (trigger === 'autonomous' || trigger === 'random') return PRIORITY.autonomous;
     if (trigger === 'test') return PRIORITY.direct;
     return PRIORITY.commentary;
@@ -557,17 +658,27 @@ export class AICohost {
     if (trigger === 'gift' && this.settings.aiGiftReactions === false) {
       return { ok: false, reason: 'gift-disabled' };
     }
+    if (trigger === 'follow' && !this.followReactions()) return { ok: false, reason: 'follow-disabled' };
+    if (trigger === 'share' && !this.shareReactions()) return { ok: false, reason: 'share-disabled' };
+    if (trigger === 'like' && !this.likeReactions()) return { ok: false, reason: 'like-disabled' };
 
     const itemPriority = priority ?? this.priorityFor(trigger, candidates);
     // Viewer chat has its own cooldown: an AI game/gift reaction must never
     // silence a real viewer reply. Direct questions to Zappy get a shorter one.
     const last = trigger === 'chat' ? this.lastChatReplyAt : this.lastReplyAt;
-    const cooldown = itemPriority >= PRIORITY.direct ? Math.round(this.cooldownMs() * 0.5) : this.cooldownMs();
-    if (trigger !== 'test' && this.now() - last < cooldown) {
+    const cooldown = this.cooldownFor(itemPriority);
+    // A follow is a one-off event per viewer (deduplicated above), so it is
+    // always queued rather than thrown away by the conversation cool-down.
+    const ignoreCooldown = trigger === 'follow';
+    if (trigger !== 'test' && !ignoreCooldown && this.now() - last < cooldown) {
       return { ok: false, reason: 'cooldown' };
     }
 
-    if (this.inFlight || this.isSpeaking()) {
+    // A line that is queued for TTS but not started yet is still a line: an
+    // interaction reaction must wait for it instead of overwriting its frame.
+    const pendingInteraction =
+      this.pendingSpeech() && (trigger === 'follow' || trigger === 'share' || trigger === 'like');
+    if (this.inFlight || this.isSpeaking() || pendingInteraction) {
       this.enqueue({ trigger, candidates, event, priority: itemPriority });
       return { ok: false, reason: 'busy', queued: true, queueLength: this.queue.length };
     }
@@ -618,8 +729,13 @@ export class AICohost {
 
     const item = this.nextQueueItem();
     if (!item) return;
+    // Never start an interaction reaction over a line that is already pending.
+    if (this.pendingSpeech() && (item.trigger === 'follow' || item.trigger === 'share' || item.trigger === 'like')) {
+      this.drainTimer = unref(setTimeout(() => this.drainQueue(), 1000));
+      return;
+    }
     const last = item.trigger === 'chat' ? this.lastChatReplyAt : this.lastReplyAt;
-    const cooldown = item.priority >= PRIORITY.direct ? Math.round(this.cooldownMs() * 0.5) : this.cooldownMs();
+    const cooldown = item.trigger === 'follow' ? 0 : this.cooldownFor(item.priority);
     if (this.now() - last < cooldown) {
       const wait = Math.max(250, cooldown - (this.now() - last));
       this.drainTimer = unref(setTimeout(() => this.drainQueue(), wait));
@@ -684,7 +800,7 @@ export class AICohost {
         this.store?.log?.({ category: 'ai', level: 'warn', message: `AI co-host ${trigger}: ${message}` });
         this.scheduleRecovery();
         // A failed viewer reply must not leave the hosts muted forever.
-        if (trigger === 'chat' || trigger === 'manual') this.endInteraction('no-reply');
+        if (this.isViewerTrigger(trigger)) this.endInteraction('no-reply');
         return { ok: false, reason: 'empty-reply', attempts: result.attempts };
       }
 
@@ -714,7 +830,11 @@ export class AICohost {
         },
         trigger,
         userPayload,
-        { priority, speaker, listenerEmotion: result.parsed.listenerEmotion }
+        {
+          priority,
+          speaker,
+          listenerEmotion: result.parsed.listenerEmotion || this.listenerEmotionFor(trigger),
+        }
       );
       return {
         ok: true,
@@ -738,7 +858,7 @@ export class AICohost {
         message: `AI co-host ${trigger} request failed: ${message}`,
       });
       this.scheduleRecovery();
-      if (trigger === 'chat' || trigger === 'manual') this.endInteraction('error');
+      if (this.isViewerTrigger(trigger)) this.endInteraction('error');
       return { ok: false, reason: 'error', error: message };
     } finally {
       if (this.activeRequest && this.activeRequest.id === request.id) {
@@ -922,6 +1042,17 @@ export class AICohost {
     return this.tts.state === 'speaking';
   }
 
+  /**
+   * A line is queued for TTS and the overlay has not started it yet. With no
+   * overlay connected nothing can actually play, so this never blocks then.
+   */
+  pendingSpeech() {
+    if (!this.speaking) return false;
+    const clients = this.hub?.clientCount;
+    return typeof clients !== 'number' || clients > 0;
+  }
+
+
   speak(text, reply, trigger, userPayload, { priority = PRIORITY.chat, speaker = null, listenerEmotion = null } = {}) {
     const ts = this.now();
     const speechId = ++this.speechSeq;
@@ -953,6 +1084,11 @@ export class AICohost {
     this.lastSpeaker = speakerId;
     this.mascotLines[speakerId] += 1;
     this.mascotLastAt[speakerId] = ts;
+    // Count an interaction only when its line is actually spoken, whether it
+    // ran immediately or waited in the queue behind another line.
+    if (trigger === 'follow') this.counters.followTurns += 1;
+    else if (trigger === 'share') this.counters.shareTurns += 1;
+    else if (trigger === 'like') this.counters.likeTurns += 1;
     this.memory.exchange.push({ speaker: speakerId, text, ts });
     if (this.memory.exchange.length > 8) this.memory.exchange.shift();
     this.tts.state = 'pending';
@@ -1043,7 +1179,7 @@ export class AICohost {
       this.tts.lastSpokenText = text;
       this.counters.spoken += 1;
       // The viewer has been answered: the hosts pick their own chat back up.
-      if (trigger === 'chat' || trigger === 'manual') this.endInteraction('speech-end');
+      if (this.isViewerTrigger(trigger)) this.endInteraction('speech-end');
       this.drainQueue();
       return { ok: true };
     }
@@ -1271,6 +1407,177 @@ export class AICohost {
     if (result.ok) this.counters.autonomous += 1;
     this.scheduleAutonomous(this.talkDelay());
     return result;
+  }
+
+  // -------------------------------------------------------- TikTok reactions
+
+  /** A mascot reaction costs nothing: it never calls the AI. */
+  broadcastMascotFx(action, target = 'both') {
+    this.hub?.broadcast?.('mascot-fx', { kind: 'mascot-fx', action, target, ts: this.now() });
+  }
+
+  /** The host that speaks next under the strict alternation rule. */
+  nextSpeaker() {
+    if (!this.twoMascots()) return 'zappy';
+    return this.otherMascot(this.lastSpeaker);
+  }
+
+  syncInteractionOptions() {
+    this.interactions.setOptions({ windowMs: this.likeWindowMs(), minMilestone: this.minMilestone() });
+  }
+
+  /**
+   * One real TikFinity like event (TikTok batches several taps per event). It is
+   * only recorded here: speaking waits for the aggregation window to close, so
+   * a like storm can never become one AI request per like.
+   */
+  observeLike(event = {}) {
+    if (!this.enabled() || !this.likeReactions()) return { accepted: false, reason: 'disabled' };
+    const added = this.interactions.addLike(event);
+    if (!added.accepted) return added;
+    this.syncInteractionOptions();
+    this.scheduleLikeFlush();
+    return added;
+  }
+
+  scheduleLikeFlush() {
+    if (!this.scheduleTimers || this.likeTimer) return;
+    const wait = Math.max(250, this.interactions.dueInMs() ?? this.likeWindowMs());
+    this.likeTimer = unref(
+      setTimeout(() => {
+        this.likeTimer = null;
+        this.flushLikes().catch(() => {});
+      }, wait)
+    );
+  }
+
+  /** Close the like window: always react visually, rarely spend an AI call. */
+  async flushLikes() {
+    clearTimeout(this.likeTimer);
+    this.likeTimer = null;
+    this.syncInteractionOptions();
+    const batch = this.interactions.flushLikes();
+    if (!batch) return { ok: false, reason: 'empty' };
+
+    const milestone = this.likeMilestonesOn() ? batch.milestone : null;
+    // Both hosts react with their own animation even when no line is generated.
+    this.broadcastMascotFx(milestone ? 'celebrate' : 'hearts', 'both');
+    if (!this.enabled() || !this.likeReactions()) {
+      return { ok: true, spoken: false, reason: 'disabled', batch };
+    }
+
+    if (!milestone) {
+      // A thank-you for every batch would flood the provider, so batches are
+      // rate-limited and only sometimes become a spoken line.
+      const gap = Math.max(12000, this.cooldownMs() * 1.5);
+      if (this.now() - this.lastLikeReplyAt < gap) return { ok: true, spoken: false, reason: 'like-cooldown', batch };
+      if (this.rng() > this.eventChance()) return { ok: true, spoken: false, reason: 'frequency', batch };
+      if (this.inFlight || this.isSpeaking() || this.queue.length) {
+        return { ok: true, spoken: false, reason: 'busy', batch };
+      }
+    }
+
+    const result = await this.respond({
+      trigger: 'like',
+      event: describeLikes(batch, milestone),
+      priority: PRIORITY.like,
+      candidates: batch.users.map((username) => ({ username, text: 'sent likes' })),
+    });
+    if (result.ok) {
+      if (milestone) this.counters.milestones += 1;
+      this.lastLikeReplyAt = this.now();
+      this.lastEventReplyAt = this.now();
+    }
+    return { ok: true, spoken: Boolean(result.ok), milestone, batch, result };
+  }
+
+  /** A new follower is welcomed right away, by name, by one host. */
+  async observeFollow(event = {}) {
+    if (!this.enabled() || !this.followReactions()) return { accepted: false, reason: 'disabled' };
+    const added = this.interactions.addFollow(event);
+    if (!added.accepted) return added;
+    const name = sanitizeViewerText(added.username, 24);
+    if (!name) return { accepted: false, reason: 'no-user' };
+
+    this.lastFollow = { username: name, at: this.now() };
+    this.counters.follows += 1;
+    this.broadcastMascotFx('welcome', this.nextSpeaker());
+    if (this.viewerPriority()) this.beginInteraction(name);
+
+    const result = await this.respond({
+      trigger: 'follow',
+      event: `${name} just followed the channel.`,
+      priority: PRIORITY.follow,
+      candidates: [{ username: name, text: 'just followed' }],
+    });
+    if (result.ok) {
+      this.lastEventReplyAt = this.now();
+    } else if (!result.queued && this.interaction.active) {
+      // No line will ever finish this interaction (cooldown, failure), so the
+      // hosts must not stay paused until the watchdog releases them.
+      this.endInteraction(result.reason || 'no-reply');
+    }
+    return { accepted: true, username: name, ...result };
+  }
+
+  /** A share is celebrated immediately; the spoken thank-you is deduplicated. */
+  async observeShare(event = {}) {
+    if (!this.enabled() || !this.shareReactions()) return { accepted: false, reason: 'disabled' };
+    const added = this.interactions.addShare(event);
+    if (!added.accepted) return added;
+    const name = sanitizeViewerText(added.username, 24);
+    if (!name) return { accepted: false, reason: 'no-user' };
+
+    this.lastShare = { username: name, at: this.now() };
+    this.counters.shares += 1;
+    // Occasionally both hosts react together, otherwise the next host does.
+    const together = this.rng() < 0.35;
+    this.broadcastMascotFx(together ? 'sparkles' : 'celebrate', together ? 'both' : this.nextSpeaker());
+
+    if (this.rng() > Math.min(0.95, this.eventChance() * 2.4)) {
+      return { accepted: true, username: name, spoken: false, reason: 'frequency' };
+    }
+    if (this.viewerPriority()) this.beginInteraction(name);
+    const result = await this.respond({
+      trigger: 'share',
+      event: `${name} shared the LIVE.`,
+      priority: PRIORITY.share,
+      candidates: [{ username: name, text: 'shared the live' }],
+    });
+    if (result.ok) {
+      this.lastEventReplyAt = this.now();
+    } else if (!result.queued && this.interaction.active) {
+      this.endInteraction(result.reason || 'no-reply');
+    }
+    return { accepted: true, username: name, ...result };
+  }
+
+  interactionStatus() {
+    const likes = this.interactions.status();
+    return {
+      likes: {
+        ...likes,
+        windowSec: Math.round(this.likeWindowMs() / 1000),
+        minMilestoneSetting: this.minMilestone(),
+        milestonesOn: this.likeMilestonesOn(),
+        reactionsOn: this.likeReactions(),
+        lastReplyAt: this.lastLikeReplyAt || null,
+      },
+      follows: {
+        on: this.followReactions(),
+        total: this.counters.follows,
+        turns: this.counters.followTurns,
+        last: this.lastFollow,
+      },
+      shares: {
+        on: this.shareReactions(),
+        total: this.counters.shares,
+        turns: this.counters.shareTurns,
+        last: this.lastShare,
+      },
+      eventFrequency: this.settings.aiEventFrequency || 'normal',
+      eventChance: this.eventChance(),
+    };
   }
 
   // ------------------------------------------------------------- game events
@@ -1693,6 +2000,7 @@ export class AICohost {
         interaction: { ...this.interaction },
         nextTalkInMs: this.autonomousAt ? Math.max(0, this.autonomousAt - now) : null,
       },
+      interactions: this.interactionStatus(),
       counters: { ...this.counters },
       memory: {
         chats: this.memory.chats.length,
@@ -1708,6 +2016,7 @@ export class AICohost {
     clearTimeout(this.pending?.timer);
     clearTimeout(this.drainTimer);
     clearTimeout(this.autonomousTimer);
+    clearTimeout(this.likeTimer);
     clearInterval(this.watchdogTimer);
     this.watchdogTimer = null;
     this.autonomousTimer = null;

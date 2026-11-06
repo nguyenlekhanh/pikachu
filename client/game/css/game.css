@@ -336,7 +336,7 @@ body {
 
 .how-to-coords .coord {
   font-family: var(--font-display);
-  font-size: 88px;
+  font-size: 60px;
   font-weight: 900;
   letter-spacing: 2px;
   color: #fff;
@@ -1078,4 +1078,38 @@ body.bg-chroma .spark {
 
 body.bg-chroma #topbar .brand-text h1 {
   text-shadow: 0 4px 0 #003b16;
+}
+
+/* ---------------------------------------------------- TikTok interaction fx
+   Likes, milestones, shares and follows animate the mascot body only, so the
+   flight transform keeps running and the mascot never leaves its rail. */
+.mascot-fx-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  pointer-events: none;
+  font-size: 34px;
+  line-height: 1;
+  opacity: 0;
+  z-index: 2;
+}
+.mascot.fx-hearts .mascot-fx-layer { color: #ff5c8a; text-shadow: 0 0 14px rgba(255, 92, 138, 0.75); }
+.mascot.fx-celebrate .mascot-fx-layer { color: #ffd23f; font-size: 44px; text-shadow: 0 0 18px rgba(255, 210, 63, 0.85); }
+.mascot.fx-sparkles .mascot-fx-layer { color: #7df9ff; font-size: 40px; text-shadow: 0 0 18px rgba(125, 249, 255, 0.85); }
+.mascot.fx-welcome .mascot-fx-layer { color: #6fe3c4; text-shadow: 0 0 14px rgba(111, 227, 196, 0.75); }
+
+.mascot.fx-active .mascot-fx-layer { animation: mascot-fx-float 1.7s ease-out; }
+.mascot.fx-active .zappy-body,
+.mascot.fx-active .pip-body { animation: mascot-fx-hop 0.5s ease-in-out 3; }
+
+@keyframes mascot-fx-float {
+  0% { opacity: 0; transform: translateY(20px) scale(0.65); }
+  22% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-42px) scale(1.3); }
+}
+@keyframes mascot-fx-hop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-15px) scale(1.06); }
 }

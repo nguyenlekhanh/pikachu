@@ -151,15 +151,30 @@ export class MockAdapter extends EventEmitter {
     });
   }
 
-  like(username = 'TestViewer', count = 5) {
+  like(username = 'TestViewer', count = 5, totalLikeCount = 0) {
     return this.injectRaw({
       event: 'like',
-      data: { userId: `mock-${username}`, uniqueId: username, nickname: username, likeCount: count },
+      data: {
+        userId: `mock-${username}`,
+        uniqueId: username,
+        nickname: username,
+        likeCount: count,
+        totalLikeCount,
+        // Real TikFinity like events carry the room total and a timestamp.
+        createTime: Date.now(),
+      },
+    });
+  }
+
+  share(username = 'TestViewer') {
+    return this.injectRaw({
+      event: 'share',
+      data: { userId: `mock-${username}`, uniqueId: username, nickname: username, createTime: Date.now() },
     });
   }
 
   /** Inject an already-normalized admin test event through the same pipeline. */
-  injectTest({ type = 'comment', username = 'TestViewer', text, giftId, giftName, coins, count } = {}) {
+  injectTest({ type = 'comment', username = 'TestViewer', text, giftId, giftName, coins, count, total } = {}) {
     if (type === 'gift') {
       return this.gift(
         username,
@@ -172,7 +187,8 @@ export class MockAdapter extends EventEmitter {
       );
     }
     if (type === 'follow') return this.follow(username);
-    if (type === 'like') return this.like(username);
+    if (type === 'share') return this.share(username);
+    if (type === 'like') return this.like(username, Number(count) || 5, Number(total) || 0);
     return this.comment(username, text || 'A1 B1');
   }
 

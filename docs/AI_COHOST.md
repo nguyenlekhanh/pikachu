@@ -268,3 +268,49 @@ Run everything with `npm test`.
   interval) if the provider is metered.
 - A watchdog recovery cannot cancel a provider HTTP request that a local server already accepted;
   it invalidates the response so it is never spoken.
+
+## TikTok interactions: likes, follows and shares
+
+TikFinity already delivers `like`, `follow`, `share`, `gift` and `chat`. The two
+hosts react to all of them, in this priority order (highest first):
+
+1. a comment aimed at a host by name (or any real viewer reply)
+2. gifts
+3. new followers
+4. shares
+5. like milestones and like batches
+6. game commentary
+7. the hosts' own banter
+
+A higher-priority event that arrives while a line is playing is **queued**, never
+spoken over it. Only one mascot ever speaks at a time.
+
+### Likes are aggregated
+
+Individual likes never reach the AI. `server/ai/interactions.js` counts every real
+event (`likeCount`, `totalLikeCount`, usernames, message ids), drops redeliveries
+and closes one window per `Like aggregation window` (default **5 s**):
+
+- both mascots always play a short reaction animation (hearts), which costs nothing;
+- only occasionally does a batch become a spoken thank-you, rate-limited by the
+  conversation cool-down and `Event reaction frequency`;
+- **milestones** (`100`, `500`, `1,000`, `5,000`, `10,000`, filtered by `Minimum
+  like milestone`) are celebrated once each per LIVE, together: both mascots
+  animate and the speaking host celebrates in its own voice. A big jump celebrates
+  the highest milestone crossed and marks the lower ones as passed, so one spike
+  cannot produce a burst of announcements.
+
+### Follows and shares
+
+- A follow is welcomed **immediately** by the exact username from the event (one
+  host welcomes, the other may react on the next turn). The follow cool-down is
+  ignored on purpose; redelivered follows are deduplicated per viewer.
+- A share gets a short celebration animation; one host thanks the viewer by name
+  when the reaction frequency allows, and occasionally both hosts react together.
+- No username, like count, milestone or gift is ever invented: if an event carries
+  no usable user, nothing is said.
+
+Admin → AI Mascot → **TikTok interactions** controls Like/Follow/Share reactions,
+like milestones, the aggregation window, the minimum milestone and the event
+reaction frequency. The live status block shows like batches, the next milestone,
+celebrated milestones, and how many follows/shares were seen and answered.
